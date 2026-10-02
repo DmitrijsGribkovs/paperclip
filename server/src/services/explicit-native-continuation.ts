@@ -283,6 +283,8 @@ export async function admitExplicitNativeContinuation(input: {
     });
   }
   const authorization = { actorId, commentId, ...(response ? { interactionId: response.source.interactionId } : {}), ...(retry ? { failedRunId: input.failedRunId } : {}),
+    ...(comment ? { commentUpdatedAt: comment.updatedAt.toISOString(),
+      commentBodyHash: createHash("sha256").update(comment.body).digest("hex") } : {}),
     ...(queuedInterrupt ? { queuedCommentInterruptId: input.queuedCommentInterruptId } : {}),
     ...(queuedRequest ? { queuedCommentRequestId: input.queuedCommentRequestId } : {}), runId: input.successorRunId,
     previousRunId: previous.id, recordedAt: new Date().toISOString() };
@@ -364,7 +366,8 @@ export async function admitExplicitContinuationRetry(input: {
     const auth = row.evidence.explicitUserContinuation as Record<string, unknown> | undefined;
     return auth && auth.previousRunId === explicit.previousRunId && auth.commentId === commentId &&
       auth.actorId === comment.authorUserId && !auth.failedRunId && !auth.queuedCommentInterruptId &&
-      typeof auth.recordedAt === "string" && comment.updatedAt.getTime() <= Date.parse(auth.recordedAt);
+      auth.commentUpdatedAt === comment.updatedAt.toISOString() &&
+      auth.commentBodyHash === createHash("sha256").update(comment.body).digest("hex");
   });
   if (!receipt) return null;
   const [superseding] = await db.select({ id: heartbeatRuns.id }).from(heartbeatRuns).where(and(
@@ -397,10 +400,10 @@ export async function admitExplicitContinuationRetry(input: {
     nextAction: "The bounded retry has its own authorization for the unchanged user message.",
     evidence: { explicitUserContinuation: {
       ...continuation, actorId: comment.authorUserId, runId: input.successorRunId,
+      commentUpdatedAt: comment.updatedAt.toISOString(),
+      commentBodyHash: createHash("sha256").update(comment.body).digest("hex"),
       recordedAt: input.now.toISOString(), automaticRetry: {
         sourceRunId: parent.id, sourceAuthorizationId: receipt.id,
-        commentUpdatedAt: comment.updatedAt.toISOString(),
-        commentBodyHash: createHash("sha256").update(comment.body).digest("hex"),
       },
     } },
   });

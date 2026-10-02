@@ -482,12 +482,13 @@ const support = await getEmbeddedPostgresTestSupport();
     },
   );
 
-  it.each(["deleted", "edited", "empty", "actor", "run_authored", "receipt_run", "receipt_company", "source", "task", "reassigned", "done", "superseded", "native_superseding", "interrupted_intent"])(
+  it.each(["deleted", "edited", "same_millisecond_edit", "empty", "actor", "run_authored", "legacy_receipt", "receipt_run", "receipt_company", "source", "task", "reassigned", "done", "superseded", "native_superseding", "interrupted_intent"])(
     "refuses to re-admit an automatic explicit retry after %s changes", async kind => {
       const f = await seedTimedOutExplicitTurn();
-      if (["deleted", "edited", "empty", "actor", "run_authored"].includes(kind)) await db.update(issueComments).set({
+      if (["deleted", "edited", "same_millisecond_edit", "empty", "actor", "run_authored"].includes(kind)) await db.update(issueComments).set({
         ...(kind === "deleted" ? { deletedAt: new Date() } : {}),
         ...(kind === "edited" ? { body: "Different instructions", updatedAt: new Date(f.now.getTime() + 1000) } : {}),
+        ...(kind === "same_millisecond_edit" ? { body: "Different instructions within the recorded millisecond" } : {}),
         ...(kind === "empty" ? { body: " " } : {}),
         ...(kind === "actor" ? { authorUserId: "another-user" } : {}),
         ...(kind === "run_authored" ? { createdByRunId: f.parent.id } : {}),
@@ -500,6 +501,12 @@ const support = await getEmbeddedPostgresTestSupport();
       } }).where(eq(issueRecoveryActions.id, f.receipt.id));
       if (kind === "receipt_company") await db.update(issueRecoveryActions).set({ companyId: (await seed()).companyId })
         .where(eq(issueRecoveryActions.id, f.receipt.id));
+      if (kind === "legacy_receipt") {
+        const { commentBodyHash: _bodyHash, commentUpdatedAt: _updatedAt, ...legacy } =
+          f.receipt.evidence.explicitUserContinuation as Record<string, unknown>;
+        await db.update(issueRecoveryActions).set({ evidence: { ...f.receipt.evidence,
+          explicitUserContinuation: legacy } }).where(eq(issueRecoveryActions.id, f.receipt.id));
+      }
       if (kind === "source" || kind === "task") await db.update(heartbeatRuns).set({ contextSnapshot: {
         ...f.parent.contextSnapshot,
         ...(kind === "task" ? { issueId: randomUUID() } : { explicitUserContinuation: { previousRunId: randomUUID(), commentId: f.commentId } }),
@@ -517,6 +524,14 @@ const support = await getEmbeddedPostgresTestSupport();
         eq(issueRecoveryActions.cause, "explicit_user_continuation_retry")))).toHaveLength(0);
     },
   );
+
+  it("binds the initial user-message admission before any automatic retry", async () => {
+    const f = await seedTimedOutExplicitTurn();
+    await expect(dispatchExplicitRetry(f, f.parent)).resolves.toMatchObject({ interruptedRunId: f.sourceRunId });
+    await db.update(issueComments).set({ body: "Changed after the original admission" })
+      .where(eq(issueComments.id, f.commentId));
+    await expect(dispatchExplicitRetry(f, f.parent)).rejects.toThrow("continuation_user_authorization_missing");
+  });
 
   it.each(["deleted", "edited", "same_millisecond_edit", "actor", "receipt_run", "receipt_source", "retry_parent", "execution_owner"])(
     "revalidates the successor's exact authorization at dispatch: %s", async kind => {
