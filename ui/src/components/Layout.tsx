@@ -13,7 +13,6 @@ import { AgentContextualSidebar } from "./AgentContextualSidebar";
 import { RoutineContextualSidebar } from "./RoutineContextualSidebar";
 import { SkillsContextualSidebar } from "./SkillsContextualSidebar";
 import { ChatContextualSidebar } from "./ChatContextualSidebar";
-import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { useAgentChatV2Enabled } from "@/hooks/useAgentChatV2Enabled";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -94,9 +93,9 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     setForceCollapsed,
   } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialogActions();
-  const { enabled: agentChatEnabled } = useAgentChatEnabled();
   const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
-  const chatRailEnabled = agentChatEnabled && agentChatV2Enabled;
+  // v2 carries chat on its own — it does not need the classic Agent Chat flag.
+  const chatRailEnabled = agentChatV2Enabled;
   const { togglePanelVisible } = usePanel();
   // Optional: Layout also renders in harnesses without a ToastProvider.
   const pushToast = useOptionalToastActions()?.pushToast ?? null;

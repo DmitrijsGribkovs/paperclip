@@ -13,7 +13,6 @@ import { useDialogActions } from "../context/DialogContext";
 import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
-import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { useAgentChatV2Enabled } from "@/hooks/useAgentChatV2Enabled";
 import { Badge } from "@/components/ui/badge";
 
@@ -43,14 +42,12 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialogActions();
   const inboxBadge = useInboxBadge(selectedCompanyId);
-  const { enabled: agentChatEnabled } = useAgentChatEnabled();
   const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
 
   // Agent Chat v2 (PAP-670): Home · Chat · + · Tasks · Agents. Inbox is gone as
   // a destination — it is a view inside Tasks, so its unread badge rides on
-  // Tasks. Chat only appears when `enableAgentChat` is on too, and the grid
-  // tracks the live count so the bar stays evenly divided either way. With v2
-  // off the bar is the original Home · Tasks · + · Agents · Inbox.
+  // Tasks. v2 carries chat on its own, independent of the classic Agent Chat
+  // flag. With v2 off the bar is the original Home · Tasks · + · Agents · Inbox.
   const items = useMemo<MobileNavItem[]>(
     () => !agentChatV2Enabled ? [
       { type: "link", to: "/dashboard", label: "Home", icon: House },
@@ -66,9 +63,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       },
     ] : [
       { type: "link", to: "/dashboard", label: "Home", icon: House },
-      ...(agentChatEnabled
-        ? [{ type: "link", to: "/chats", label: "Chat", icon: MessageSquare } as MobileNavItem]
-        : []),
+      { type: "link", to: "/chats", label: "Chat", icon: MessageSquare },
       { type: "action", label: "New Task", icon: SquarePen, onClick: () => openNewIssue() },
       {
         type: "link",
@@ -79,7 +74,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       },
       { type: "link", to: "/agents/all", label: "Agents", icon: Users },
     ],
-    [openNewIssue, inboxBadge.inbox, agentChatEnabled, agentChatV2Enabled],
+    [openNewIssue, inboxBadge.inbox, agentChatV2Enabled],
   );
 
   return (

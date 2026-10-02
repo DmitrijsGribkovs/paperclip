@@ -1061,6 +1061,8 @@ describe("Layout", () => {
   });
 
   it("keeps global navigation beside the Chat rail on desktop chat routes (PAP-670)", async () => {
+    // The classic Agent Chat flag is off: v2 carries the rail on its own.
+    mockAgentChat.enabled = false;
     for (const pathname of ["/PAP/chats", "/PAP/chats/ceo"]) {
       currentPathname = pathname;
       const root = createRoot(container);
@@ -1088,10 +1090,11 @@ describe("Layout", () => {
       });
       container.innerHTML = "";
     }
+    mockAgentChat.enabled = true;
   });
 
-  it("omits the Chat rail when agent chat or Agent Chat v2 is off, and on mobile (PAP-670)", async () => {
-    for (const [enabled, v2, isMobile] of [[false, true, false], [true, false, false], [true, true, true]] as const) {
+  it("omits the Chat rail when Agent Chat v2 is off, and on mobile (PAP-670)", async () => {
+    for (const [enabled, v2, isMobile] of [[true, false, false], [true, true, true]] as const) {
       mockAgentChat.enabled = enabled;
       mockAgentChat.v2 = v2;
       mockSidebarState.isMobile = isMobile;

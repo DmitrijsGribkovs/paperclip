@@ -203,7 +203,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           {/* Agent Chat v2: Chat leads the Work group as a single row — the
               agents you talk to live in the Chat surface's own secondary rail
               (ChatContextualSidebar), not in the primary nav. */}
-          {agentChatV2 && agentChatEnabled ? (
+          {agentChatV2 ? (
             <SidebarNavItem to="/chats" label="Chat" icon={MessageSquare} />
           ) : null}
           {/* Agent Chat v2: Inbox is a view inside Tasks, so the

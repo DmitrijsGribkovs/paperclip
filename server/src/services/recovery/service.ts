@@ -1,3 +1,4 @@
+import { isAgentChatEnabled } from "@paperclipai/shared";
 import { isNativeWorkspaceExportRepairCause } from "@paperclipai/shared";
 import { settleSlackConversation } from "../slack-conversation-lifecycle.js";
 import { externalConversationStateSql } from "../slack-conversation-state.js";
@@ -4402,7 +4403,7 @@ export function recoveryService(
             if (current) Object.assign(issue, current);
           }
         }
-        if (!(await instanceSettingsService(db).getExperimental()).enableAgentChat) { result.skipped += 1; continue; }
+        if (!isAgentChatEnabled(await instanceSettingsService(db).getExperimental())) { result.skipped += 1; continue; }
         {
           await deliverConversationComments(db, issue, deps.enqueueWakeup);
         }

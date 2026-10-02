@@ -1,3 +1,4 @@
+import { isAgentChatEnabled } from "@paperclipai/shared";
 import { isAcknowledgedNativeReassignmentStop, isAcknowledgedNativeStop } from "../../../services/acknowledged-native-stop.js";
 import { isCompletedOnboardingHandoffWake } from "../../../services/chat-completion-delivery.js";
 import { instanceSettingsService } from "../../../services/instance-settings.js";
@@ -1190,7 +1191,7 @@ export function createPostgresWakeQueueAdapter(db: Db, deps: WakeQueuePostgresAd
         // Releases still settle while Agent Chat is disabled, but no deferred
         // turn or recovery successor may be created. Check here in the shared
         // transaction so cleanup retries and restart sweeps use the same gate.
-        if (issueRow.conversationAgentId && !(await instanceSettingsService(tx).getExperimental()).enableAgentChat) {
+        if (issueRow.conversationAgentId && !isAgentChatEnabled(await instanceSettingsService(tx).getExperimental())) {
           return { outcome: { kind: "released" }, postCommitEffects: [], run: runSnapshot };
         }
 

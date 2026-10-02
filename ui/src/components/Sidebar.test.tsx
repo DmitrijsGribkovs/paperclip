@@ -414,11 +414,11 @@ describe("Sidebar", () => {
       });
     });
 
-    it("hides Chat while agent chat itself is off", async () => {
+    it("shows Chat with v2 alone — it does not need the classic Agent Chat flag", async () => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true, enableAgentChat: false });
       const root = await renderSidebar();
 
-      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(false);
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(true);
       expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).toBeNull();
 
       flushSync(() => {
