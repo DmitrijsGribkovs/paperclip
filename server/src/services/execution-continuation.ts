@@ -400,6 +400,7 @@ export async function buildExecutionContinuation(input: {
               (!value.automaticRetry || (
                 object(value.automaticRetry).sourceRunId === explicitUserSource &&
                 object(value.automaticRetry).commentUpdatedAt === comment.updatedAt.toISOString() &&
+                object(value.automaticRetry).commentBodyHash === createHash("sha256").update(comment.body).digest("hex") &&
                 comment.body.trim().length > 0 && issue.executionRunId === input.runId &&
                 priorRuns.some(run => run.id === value.runId && run.retryOfRunId === explicitUserSource)
               )) &&

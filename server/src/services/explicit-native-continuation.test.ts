@@ -518,15 +518,16 @@ const support = await getEmbeddedPostgresTestSupport();
     },
   );
 
-  it.each(["deleted", "edited", "actor", "receipt_run", "receipt_source", "retry_parent", "execution_owner"])(
+  it.each(["deleted", "edited", "same_millisecond_edit", "actor", "receipt_run", "receipt_source", "retry_parent", "execution_owner"])(
     "revalidates the successor's exact authorization at dispatch: %s", async kind => {
       const f = await seedTimedOutExplicitTurn();
       const scheduled = await heartbeatService(db).scheduleBoundedRetry(f.parent.id, { now: f.now });
       expect(scheduled.outcome).toBe("scheduled");
       if (scheduled.outcome !== "scheduled") return;
-      if (["deleted", "edited", "actor"].includes(kind)) await db.update(issueComments).set({
+      if (["deleted", "edited", "same_millisecond_edit", "actor"].includes(kind)) await db.update(issueComments).set({
         ...(kind === "deleted" ? { deletedAt: new Date() } : {}),
         ...(kind === "edited" ? { body: "Changed after scheduling", updatedAt: new Date(f.now.getTime() + 1000) } : {}),
+        ...(kind === "same_millisecond_edit" ? { body: "Changed within the recorded millisecond" } : {}),
         ...(kind === "actor" ? { authorUserId: "another-user" } : {}),
       }).where(eq(issueComments.id, f.commentId));
       if (kind === "receipt_run" || kind === "receipt_source") {

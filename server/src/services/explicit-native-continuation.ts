@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { appendHeartbeatRunEvent } from "./heartbeat-run-events.js";
 import { canContinueCancelledRun } from "./run-cancellation.js";
 import { readQueuedInteractionResponse } from "./queued-interaction-response.js";
@@ -399,6 +400,7 @@ export async function admitExplicitContinuationRetry(input: {
       recordedAt: input.now.toISOString(), automaticRetry: {
         sourceRunId: parent.id, sourceAuthorizationId: receipt.id,
         commentUpdatedAt: comment.updatedAt.toISOString(),
+        commentBodyHash: createHash("sha256").update(comment.body).digest("hex"),
       },
     } },
   });
