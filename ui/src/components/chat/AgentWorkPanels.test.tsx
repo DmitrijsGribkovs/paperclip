@@ -84,9 +84,9 @@ describe("agent work panels", () => {
 
   it("lists the agent's tasks newest first as linked cards, without the chat itself", async () => {
     api.issuesList.mockResolvedValue([
-      task({ id: "old", identifier: "PAP-1", title: "Older task", updatedAt: "2026-09-01T00:00:00.000Z" }),
+      task({ id: "old", identifier: "PAP-1", title: "Older task", updatedAt: new Date("2026-09-01T00:00:00.000Z") }),
       task({ id: "chat", identifier: "PAP-2", title: "The conversation" }),
-      task({ id: "new", identifier: "PAP-3", title: "Newer task", status: "in_progress", updatedAt: "2026-09-20T00:00:00.000Z" }),
+      task({ id: "new", identifier: "PAP-3", title: "Newer task", status: "in_progress", updatedAt: new Date("2026-09-20T00:00:00.000Z") }),
     ]);
     await render(<AgentTasksPanel companyId="company-1" agentId="agent-1" excludeIssueId="chat" />);
 

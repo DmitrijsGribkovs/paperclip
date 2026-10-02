@@ -14,6 +14,7 @@ import { RoutineContextualSidebar } from "./RoutineContextualSidebar";
 import { SkillsContextualSidebar } from "./SkillsContextualSidebar";
 import { ChatContextualSidebar } from "./ChatContextualSidebar";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
+import { useAgentChatV2Enabled } from "@/hooks/useAgentChatV2Enabled";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -94,6 +95,8 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialogActions();
   const { enabled: agentChatEnabled } = useAgentChatEnabled();
+  const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
+  const chatRailEnabled = agentChatEnabled && agentChatV2Enabled;
   const { togglePanelVisible } = usePanel();
   // Optional: Layout also renders in harnesses without a ToastProvider.
   const pushToast = useOptionalToastActions()?.pushToast ?? null;
@@ -214,7 +217,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     <SetupWizardSidebarOutlet><RoutineContextualSidebar routineId={routineId} /></SetupWizardSidebarOutlet>
   ) : streamlinedUiEnabled && shellRoute.builtInContextualSurface === "skills" ? (
     <SkillsContextualSidebar />
-  ) : streamlinedUiEnabled && shellRoute.builtInContextualSurface === "chat" && agentChatEnabled && !isMobile ? (
+  ) : streamlinedUiEnabled && shellRoute.builtInContextualSurface === "chat" && chatRailEnabled && !isMobile ? (
     // Desktop only: on mobile the drawer keeps the primary nav and /chats is
     // itself the conversation list, so a second list would be redundant.
     <ChatContextualSidebar />

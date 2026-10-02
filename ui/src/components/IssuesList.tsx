@@ -1761,7 +1761,7 @@ function StreamlinedIssuesList({
       <IssuesToolbar
         className="paperclip-task-list-toolbar"
         ariaLabel={toolbarPresentation === "collection" ? "Task controls" : undefined}
-        context={(
+        context={toolbarContext ? (
           <div className="flex min-w-0 items-center gap-2">
             {toolbarContext}
             <Button size="sm" variant="outline" aria-label={createButtonLabel} onClick={() => openCreateIssueDialog()}>
@@ -1769,6 +1769,11 @@ function StreamlinedIssuesList({
               <span className="hidden sm:inline">{createButtonLabel}</span>
             </Button>
           </div>
+        ) : (
+          <Button size="sm" variant="outline" aria-label={createButtonLabel} onClick={() => openCreateIssueDialog()}>
+            <Plus className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">{createButtonLabel}</span>
+          </Button>
         )}
         search={(
           <IssueSearchInput

@@ -79,6 +79,8 @@ export interface InstanceExperimentalSettings {
   enablePipelines: boolean;
   enableCases: boolean;
   enableAgentChat: boolean;
+  /** Reorganized left nav, Inbox-as-Tasks-views, and the chat agent rail + task cards. */
+  enableAgentChatV2: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
   enableIssuePlanDecompositions: boolean;

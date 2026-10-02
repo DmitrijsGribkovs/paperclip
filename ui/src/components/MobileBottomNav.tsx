@@ -6,6 +6,7 @@ import {
   SquarePen,
   Users,
   MessageSquare,
+  Inbox,
 } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
@@ -13,6 +14,7 @@ import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
+import { useAgentChatV2Enabled } from "@/hooks/useAgentChatV2Enabled";
 import { Badge } from "@/components/ui/badge";
 
 interface MobileBottomNavProps {
@@ -42,13 +44,27 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const { openNewIssue } = useDialogActions();
   const inboxBadge = useInboxBadge(selectedCompanyId);
   const { enabled: agentChatEnabled } = useAgentChatEnabled();
+  const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
 
-  // PAP-670: Home · Chat · + · Tasks · Agents. Inbox is gone as a destination —
-  // it is a view inside Tasks now, so its unread badge rides on Tasks. Chat only
-  // appears when `enableAgentChat` is on, and the grid tracks the live count so
-  // the bar stays evenly divided either way.
+  // Agent Chat v2 (PAP-670): Home · Chat · + · Tasks · Agents. Inbox is gone as
+  // a destination — it is a view inside Tasks, so its unread badge rides on
+  // Tasks. Chat only appears when `enableAgentChat` is on too, and the grid
+  // tracks the live count so the bar stays evenly divided either way. With v2
+  // off the bar is the original Home · Tasks · + · Agents · Inbox.
   const items = useMemo<MobileNavItem[]>(
-    () => [
+    () => !agentChatV2Enabled ? [
+      { type: "link", to: "/dashboard", label: "Home", icon: House },
+      { type: "link", to: "/issues", label: "Tasks", icon: CircleCheck },
+      { type: "action", label: "New Task", icon: SquarePen, onClick: () => openNewIssue() },
+      { type: "link", to: "/agents/all", label: "Agents", icon: Users },
+      {
+        type: "link",
+        to: "/inbox",
+        label: "Inbox",
+        icon: Inbox,
+        badge: inboxBadge.inbox,
+      },
+    ] : [
       { type: "link", to: "/dashboard", label: "Home", icon: House },
       ...(agentChatEnabled
         ? [{ type: "link", to: "/chats", label: "Chat", icon: MessageSquare } as MobileNavItem]
@@ -63,7 +79,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       },
       { type: "link", to: "/agents/all", label: "Agents", icon: Users },
     ],
-    [openNewIssue, inboxBadge.inbox, agentChatEnabled],
+    [openNewIssue, inboxBadge.inbox, agentChatEnabled, agentChatV2Enabled],
   );
 
   return (

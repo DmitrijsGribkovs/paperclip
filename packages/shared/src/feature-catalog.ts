@@ -152,6 +152,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableAgentChatV2: {
+    title: "Agent Chat v2",
+    description:
+      "The reorganized left nav and chat workspace: Chat leads the Work group with an agent rail, Inbox becomes a set of views inside Tasks, and each chat's side panel shows the agent's tasks and artifacts as cards.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableConferenceRoomChat: {
     title: "Conference Room Chat",
     description:

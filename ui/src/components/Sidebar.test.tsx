@@ -117,7 +117,7 @@ vi.mock("./SidebarStarredProjects", () => ({
 }));
 
 // Stubbed so the "no agent names in the primary nav" assertion would catch a
-// regression that mounts the old per-agent chat rows again.
+// regression that mounts the old per-agent chat rows under Agent Chat v2.
 vi.mock("./SidebarAgentChats", () => ({
   SidebarAgentChats: () => <div data-testid="sidebar-agent-chats">Agent chats</div>,
 }));
@@ -333,7 +333,7 @@ describe("Sidebar", () => {
     });
   });
 
-  it("renders plugin sidebar slots in Work below the static Work rows", async () => {
+  it("renders plugin sidebar slots in Work below Workspaces", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
     const root = await renderSidebar();
 
@@ -342,12 +342,12 @@ describe("Sidebar", () => {
     expect(sidebarSlot?.textContent).toContain("Plugin slot outlet");
     const workSectionContainer = sidebarSlot?.parentElement?.parentElement;
     const workText = workSectionContainer?.textContent ?? "";
-    expect(workText).toContain("Tasks");
-    expect(workText).toContain("Artifacts");
-    expect(workText.indexOf("Artifacts")).toBeLessThan(workText.indexOf("Plugin slot outlet"));
+    expect(workText).toContain("Work");
+    expect(workText).toContain("Workspaces");
+    expect(workText.indexOf("Workspaces")).toBeLessThan(workText.indexOf("Plugin slot outlet"));
 
     const primaryNavText = container.querySelector("nav > div:first-child")?.textContent ?? "";
-    expect(primaryNavText).toContain("Dashboard");
+    expect(primaryNavText).toContain("Inbox");
     expect(primaryNavText).not.toContain("Plugin slot outlet");
 
     flushSync(() => {
@@ -355,60 +355,83 @@ describe("Sidebar", () => {
     });
   });
 
-  it("does not render Workspaces anywhere in the nav, even with isolated workspaces on (PAP-670)", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
-    const root = await renderSidebar();
-
-    expect(container.textContent).not.toContain("Workspaces");
-    expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/workspaces")).toBe(false);
-
-    flushSync(() => {
-      root.unmount();
-    });
-  });
-
-  it("drops the Inbox row and moves its unread badge onto Tasks (PAP-670)", async () => {
-    mockInboxBadge.inbox = 7;
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
-    const root = await renderSidebar();
-
-    expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/inbox")).toBe(false);
-
-    const tasksLink = [...container.querySelectorAll("a")].find((anchor) => anchor.getAttribute("href") === "/issues");
-    expect(tasksLink).toBeTruthy();
-    expect(tasksLink?.textContent).toContain("Tasks");
-    expect(tasksLink?.textContent).toContain("7");
-
-    flushSync(() => {
-      root.unmount();
-    });
-  });
-
-  it("leads the Work group with a single Chat row and keeps agent names out of the primary nav (PAP-670)", async () => {
+  it("keeps the agent chat rows and no Chat row while Agent Chat v2 is off", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
     const root = await renderSidebar();
 
-    const chatLink = [...container.querySelectorAll("a")].find((anchor) => anchor.getAttribute("href") === "/chats");
-    expect(chatLink?.textContent).toContain("Chat");
-
-    // Agents live in the Chat surface's secondary rail, never in the primary nav.
-    expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).toBeNull();
-
-    const workSection = chatLink?.closest("div")?.parentElement?.parentElement;
-    const workText = workSection?.textContent ?? "";
-    expect(workText.indexOf("Chat")).toBeLessThan(workText.indexOf("Tasks"));
+    expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(false);
+    expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).not.toBeNull();
+    expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/inbox")).toBe(true);
 
     flushSync(() => {
       root.unmount();
     });
   });
 
-  it("hides Chat and the agent chat rows entirely while agent chat is off", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: false });
+  describe("with Agent Chat v2 on (PAP-670)", () => {
+    it("does not render Workspaces anywhere in the nav, even with isolated workspaces on", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true, enableIsolatedWorkspaces: true });
+      const root = await renderSidebar();
+
+      expect(container.textContent).not.toContain("Workspaces");
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/workspaces")).toBe(false);
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("drops the Inbox row and moves its unread badge onto Tasks", async () => {
+      mockInboxBadge.inbox = 7;
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true });
+      const root = await renderSidebar();
+
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/inbox")).toBe(false);
+
+      const tasksLink = [...container.querySelectorAll("a")].find((anchor) => anchor.getAttribute("href") === "/issues");
+      expect(tasksLink?.textContent).toContain("Tasks");
+      expect(tasksLink?.textContent).toContain("7");
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("leads the Work group with a single Chat row and keeps agent names out of the primary nav", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true, enableAgentChat: true });
+      const root = await renderSidebar();
+
+      const chatLink = [...container.querySelectorAll("a")].find((anchor) => anchor.getAttribute("href") === "/chats");
+      expect(chatLink?.textContent).toContain("Chat");
+      expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).toBeNull();
+
+      const workSection = chatLink?.closest("div")?.parentElement?.parentElement;
+      const workText = workSection?.textContent ?? "";
+      expect(workText.indexOf("Chat")).toBeLessThan(workText.indexOf("Tasks"));
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("hides Chat while agent chat itself is off", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true, enableAgentChat: false });
+      const root = await renderSidebar();
+
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(false);
+      expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+  });
+
+  it("does not flash the Workspaces link while experimental settings are loading", async () => {
+    mockInstanceSettingsApi.getExperimental.mockImplementation(() => new Promise(() => {}));
     const root = await renderSidebar();
 
-    expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(false);
-    expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).toBeNull();
+    expect(container.textContent).not.toContain("Workspaces");
 
     flushSync(() => {
       root.unmount();
@@ -630,6 +653,18 @@ describe("Sidebar", () => {
     const root = await renderSidebar();
 
     expect(container.textContent).not.toContain("Pipelines");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows the Workspaces link when isolated workspaces are enabled", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
+    const root = await renderSidebar();
+
+    const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Workspaces");
+    expect(link?.getAttribute("href")).toBe("/workspaces");
 
     flushSync(() => {
       root.unmount();

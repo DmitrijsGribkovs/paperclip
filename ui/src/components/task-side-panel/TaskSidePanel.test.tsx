@@ -70,6 +70,11 @@ vi.mock("@/components/task-detail/TaskDetailRelationsPanel", () => ({
   ),
 }));
 
+const agentChatV2 = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/hooks/useAgentChatV2Enabled", () => ({
+  useAgentChatV2Enabled: () => ({ enabled: agentChatV2.enabled, loaded: true }),
+}));
+
 vi.mock("@/components/chat/AgentWorkPanels", () => ({
   AgentTasksPanel: ({ agentId, excludeIssueId }: { agentId: string; excludeIssueId?: string }) => (
     <div>{`Agent tasks ${agentId} excluding ${excludeIssueId}`}</div>
@@ -221,6 +226,18 @@ describe("TaskSidePanel", () => {
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.getAttribute("data-side-panel-tab-target")).toBe("artifacts");
     expect(container.textContent).toContain("Agent artifacts agent-1");
     expect(container.textContent).not.toContain("Artifacts content");
+  });
+
+  it("keeps a chat on the conversation's own Artifacts while Agent Chat v2 is off", async () => {
+    agentChatV2.enabled = false;
+    try {
+      await render(panel({ issue: issue({ conversationAgentId: "agent-1" }) }));
+      expect(container.querySelector('[role="tab"][aria-selected="true"]')?.getAttribute("data-side-panel-tab-target")).toBe("artifacts");
+      expect(container.textContent).toContain("Artifacts content");
+      expect(container.textContent).not.toContain("Agent tasks");
+    } finally {
+      agentChatV2.enabled = true;
+    }
   });
 
   it("opens Properties on first visit", async () => {

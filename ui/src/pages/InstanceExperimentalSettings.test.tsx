@@ -84,6 +84,7 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enablePipelines: false,
     enableCases: false,
     enableAgentChat: false,
+    enableAgentChatV2: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,
     enableIssuePlanDecompositions: false,
@@ -221,6 +222,19 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
       await act(() => container.querySelector<HTMLButtonElement>(selector)!.click());
       await flushReact();
       expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({ enableMemoryConnectors: enabled });
+      expect(container.querySelector(selector)?.getAttribute("aria-checked")).toBe(String(enabled));
+    }
+  });
+
+  it("defaults Agent Chat v2 off and persists an explicit toggle in both directions", async () => {
+    await renderPage();
+    const selector = 'button[aria-label="Toggle agent chat v2 experimental setting"]';
+    expect(container.textContent).toContain("Agent Chat v2");
+    expect(container.querySelector(selector)?.getAttribute("aria-checked")).toBe("false");
+    for (const enabled of [true, false]) {
+      await act(() => container.querySelector<HTMLButtonElement>(selector)!.click());
+      await flushReact();
+      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({ enableAgentChatV2: enabled });
       expect(container.querySelector(selector)?.getAttribute("aria-checked")).toBe(String(enabled));
     }
   });

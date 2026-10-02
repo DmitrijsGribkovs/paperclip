@@ -306,6 +306,18 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
+          title="Agent Chat v2"
+          description="A reorganized left nav built around chat. Chat leads the Work group and opens an agent rail beside the nav, Inbox becomes a set of views inside Tasks, and each chat's side panel shows the agent's tasks and artifacts as cards."
+          footnote="The chat parts also need Agent Chat turned on. Turning this off restores the previous nav; no data changes."
+          checked={experimentalQuery.data?.enableAgentChatV2 ?? false}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableAgentChatV2: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableAgentChatV2"
+          managed={managedKeys.enableAgentChatV2}
+          ariaLabel="Toggle agent chat v2 experimental setting"
+        />
+
+        <ExperimentalToggleCard
           title="Beta skills"
           description="Allow agents to pin beta releases of the Paperclip core skill. Disabling this returns every agent to the default live skill without removing saved pins."
           checked={enableBetaSkills}

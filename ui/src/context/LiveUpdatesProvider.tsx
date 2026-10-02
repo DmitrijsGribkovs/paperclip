@@ -1032,7 +1032,7 @@ function buildJoinRequestToast(
     title: `${label} wants to join`,
     body: "A new join request is waiting for approval.",
     tone: "info",
-    action: { label: "View join requests", href: "/inbox/requests" },
+    action: { label: "View inbox", href: "/inbox/mine" },
     dedupeKey: `join-request:${entityId}`,
   };
 }

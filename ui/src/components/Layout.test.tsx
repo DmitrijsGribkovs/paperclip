@@ -99,9 +99,12 @@ vi.mock("./ChatContextualSidebar", () => ({
   ChatContextualSidebar: () => <div>Chat sidebar</div>,
 }));
 
-const mockAgentChat = vi.hoisted(() => ({ enabled: true }));
+const mockAgentChat = vi.hoisted(() => ({ enabled: true, v2: true }));
 vi.mock("@/hooks/useAgentChatEnabled", () => ({
   useAgentChatEnabled: () => ({ enabled: mockAgentChat.enabled, loaded: true }),
+}));
+vi.mock("@/hooks/useAgentChatV2Enabled", () => ({
+  useAgentChatV2Enabled: () => ({ enabled: mockAgentChat.v2, loaded: true }),
 }));
 
 vi.mock("./AppConnectionSidebar", () => ({
@@ -1087,9 +1090,10 @@ describe("Layout", () => {
     }
   });
 
-  it("omits the Chat rail when agent chat is off and on mobile (PAP-670)", async () => {
-    for (const [enabled, isMobile] of [[false, false], [true, true]] as const) {
+  it("omits the Chat rail when agent chat or Agent Chat v2 is off, and on mobile (PAP-670)", async () => {
+    for (const [enabled, v2, isMobile] of [[false, true, false], [true, false, false], [true, true, true]] as const) {
       mockAgentChat.enabled = enabled;
+      mockAgentChat.v2 = v2;
       mockSidebarState.isMobile = isMobile;
       currentPathname = "/PAP/chats/ceo";
       const root = createRoot(container);
@@ -1115,6 +1119,7 @@ describe("Layout", () => {
       container.innerHTML = "";
     }
     mockAgentChat.enabled = true;
+    mockAgentChat.v2 = true;
     mockSidebarState.isMobile = false;
   });
 
