@@ -397,6 +397,12 @@ export async function buildExecutionContinuation(input: {
               priorRuns.some(run => run.id === wake.runId && run.retryOfRunId === failedRunId))
           : rows.some(comment => comment.id === value.commentId &&
               comment.authorType === "user" &&
+              (!value.automaticRetry || (
+                object(value.automaticRetry).sourceRunId === explicitUserSource &&
+                object(value.automaticRetry).commentUpdatedAt === comment.updatedAt.toISOString() &&
+                comment.body.trim().length > 0 && issue.executionRunId === input.runId &&
+                priorRuns.some(run => run.id === value.runId && run.retryOfRunId === explicitUserSource)
+              )) &&
               (value.queuedCommentInterruptId
                 ? interruptQueues.some(queue => queue.id === value.queuedCommentInterruptId &&
                     queue.runId === value.runId &&

@@ -31,7 +31,7 @@ import { legacyControllerBootId, legacyControllerClaim, renewLegacyControllerLea
 import { completeTerminatedRemoteNativeSessionCleanup } from "../vendor/paperclip-runner/index.js";
 import { hasRemoteTerminationReceipt, remoteExecutionHasStopped, remoteTerminationReceipt, stoppedRemoteCleanupScopes } from "./remote-execution-termination.js";
 import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAssignments } from "./connector-runtime.js";
-import { admitExplicitNativeContinuation, undeliveredLegacyUserCommentIds } from "./explicit-native-continuation.js";
+import { admitExplicitNativeContinuation, admitExplicitContinuationRetry, undeliveredLegacyUserCommentIds } from "./explicit-native-continuation.js";
 import { connectionIntentService } from "./connection-intents.js";
 import { managedAiSessionFingerprintConfig, prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings, isAiConnectionBusy, AI_AUTH_ENV_KEYS } from "./ai-connection-runtime.js";
 import { aiConnectionBindingSchema } from "@paperclipai/shared";
@@ -14318,7 +14318,9 @@ export function heartbeatService(
     presentationDecision?: RunPresentationDecision | null,
   ) {
     const contextSnapshot = parseObject(run.contextSnapshot);
-    if (readNonEmptyString(contextSnapshot.goalControlRequestId)) {
+    // The explicit receipt admitted one turn. A prose-only follow-up cannot
+    // reuse it or renew it under the separate transient-failure retry policy.
+    if (readNonEmptyString(contextSnapshot.goalControlRequestId) || contextSnapshot.explicitUserContinuation) {
       if (run.issueCommentStatus !== "not_applicable") {
         await patchRunIssueCommentStatus(run.id, {
           issueCommentStatus: "not_applicable",
@@ -15673,6 +15675,7 @@ export function heartbeatService(
             | "issue_cancelled"
             | "issue_terminal_status"
             | "issue_not_in_progress"
+            | "continuation_user_authorization_missing"
             | "issue_execution_lock_changed";
           issueId: string | null;
           details: Record<string, unknown>;
@@ -15950,6 +15953,22 @@ export function heartbeatService(
           }
         }
 
+        const scheduledRunId = randomUUID();
+        if (contextSnapshot.explicitUserContinuation) {
+          const continuation = issueId && retryReason === "transient_failure" ? await admitExplicitContinuationRetry({
+            db: tx as unknown as Db, companyId: run.companyId, issueId, agentId: run.agentId,
+            parentRunId: run.id, successorRunId: scheduledRunId, now,
+          }) : null;
+          if (!continuation) return {
+            outcome: "not_scheduled", issueId,
+            errorCode: "continuation_user_authorization_missing",
+            reason: "The automatic retry could not revalidate the original user continuation.",
+            details: {},
+          };
+          retryContextSnapshot.explicitUserContinuation = continuation;
+          retryContextSnapshot.previousRunId = continuation.previousRunId;
+        }
+
         const wakeupRequest = await tx
           .insert(agentWakeupRequests)
           .values({
@@ -16000,6 +16019,7 @@ export function heartbeatService(
         const scheduledRun = await tx
           .insert(heartbeatRuns)
           .values({
+            id: scheduledRunId,
             companyId: run.companyId,
             agentId: run.agentId,
             invocationSource: "automation",

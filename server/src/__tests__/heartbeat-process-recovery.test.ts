@@ -1489,6 +1489,37 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     return { companyId, agentId, runId, wakeupRequestId, issueId };
   }
 
+  it("does not reuse a completed explicit turn's receipt for a missing-comment follow-up", async () => {
+    const { companyId, agentId, runId, issueId } = await seedQueuedIssueRunFixture();
+    const sourceRunId = randomUUID(), commentId = randomUUID();
+    await db.insert(heartbeatRuns).values({ id: sourceRunId, companyId, agentId, status: "failed",
+      finishedAt: new Date(), contextSnapshot: { issueId } });
+    await db.insert(issueComments).values({ id: commentId, companyId, issueId,
+      authorType: "user", authorUserId: "responsible-user", body: "Continue the task." });
+    await db.insert(issueRecoveryActions).values({ companyId, sourceIssueId: issueId,
+      kind: "active_run_watchdog", cause: "legacy_execution_requires_reconciliation", fingerprint: sourceRunId,
+      status: "resolved", outcome: "cancelled", nextAction: "User continued.",
+      evidence: { explicitUserContinuation: { runId, previousRunId: sourceRunId, commentId,
+        actorId: "responsible-user", recordedAt: new Date().toISOString() } } });
+    await db.update(heartbeatRuns).set({ contextSnapshot: {
+      issueId, taskId: issueId, wakeReason: "issue_assigned",
+      explicitUserContinuation: { previousRunId: sourceRunId, commentId },
+    } }).where(eq(heartbeatRuns.id, runId));
+    mockAdapterExecute.mockImplementationOnce(async () => {
+      await db.update(issues).set({ status: "done" }).where(eq(issues.id, issueId));
+      return { exitCode: 0, signal: null, timedOut: false, errorMessage: null,
+        summary: "Task completed.", provider: "test", model: "test-model" };
+    });
+    const heartbeat = heartbeatService(db);
+    await heartbeat.resumeQueuedRuns();
+    await waitForRunToSettle(heartbeat, runId);
+    await heartbeat.waitForRunExecutionDrain(runId);
+    expect(await heartbeat.getRun(runId)).toMatchObject({ status: "succeeded", issueCommentStatus: "not_applicable" });
+    expect(await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, runId))).toHaveLength(0);
+    expect(await db.select().from(agentWakeupRequests).where(and(eq(agentWakeupRequests.companyId, companyId),
+      eq(agentWakeupRequests.reason, "missing_issue_comment")))).toHaveLength(0);
+  });
+
   it("persists the normalized failure without permanently blocking the conversation", async () => {
     mockAdapterExecute.mockResolvedValueOnce({
       exitCode: 1,
