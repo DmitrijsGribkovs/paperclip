@@ -1,8 +1,35 @@
 # Executable hiring lifecycle accounting repair
 
+**Current TL;DR:** No new model calls were made. The original Codex and Claude pairs remain Fail → Fail. The stricter v3 executable replay verifies Codex accounting in both variants; Claude notification action attribution remains unresolved/uncomparable because provider and native request IDs cannot be exactly joined. No notification writes are observed in the retained native API receipts. Source-read coverage remains uncomparable for both profiles, independently of action attribution. Earlier sidecar-v1 and initial executable-v2 passes remain below with their limited task-only proof identified.
+
+## Current stricter executable replay
+
+Code revision: `e4077ade1818d98b9862ae79ee1d49a007dcf9c1`. Hiring grader: `paperclip.hiring-templates.v3`; turn accounting: `paperclip.hiring-template-turn-accounting.v2`. The separately versioned [v2 JSON receipt](2026-10-02-hiring-executable-accounting-replay.v2.json) pins exact source hashes and unchanged original inputs.
+
+| Profile | Original machine grades | Limited sidecar v1 / initial executable v2 | Stricter executable accounting | Source-read coverage |
+| --- | --- | --- | --- | --- |
+| Codex | Fail → Fail | Pass → Pass | Verified / both new guards pass in each variant | Uncomparable both |
+| ACPX Claude | Fail → Fail | Pass → Pass | Unresolved/uncomparable action attribution in each variant; guards fail closed | Uncomparable both; historical six-backtick exact-template mismatch remains |
+
+The limited sidecar and initial executable check rejected notification-created tasks but could miss an unrelated document write during a notification. Their original results and hashes are preserved; they do not prove every notification was harmless. The stricter helper adds a twelfth predicate and an independent action-coverage check. It requires complete contiguous event streams, an accepted control-plane result and succeeded/completed terminal, exact canonical/native action IDs, successful known GET API receipts or verified reads/discovery, and attributed native chat finish. Document/task/agent mutations, failed mutation attempts, incomplete streams and unknown or unmatched actions cannot pass. A readonly hint alone cannot qualify a generic API call.
+
+Codex verifies 10 candidate and 11 baseline notification tool executions, including five and seven exactly joined successful GET calls, with zero unresolved actions. ACPX's native request IDs and provider execution IDs use separate namespaces; names, ordering and counts cannot safely join them. All observed ACPX native API calls are successful GETs, but the stronger cross-ledger proof is missing (five candidate/four baseline unresolved observations). This is an evidence limitation, not a newly observed task failure or a prompt regression. No production carriers or source-read grading are changed.
+
+The observation repair retries entire bracketed snapshots, waits both known Done task callbacks and attributed chat replies (including batching), checks untruncated pending-wake diagnostics, and requires two identical complete observations. It covers the quiet gap before pending outbox work enqueues a wake. Accounted coalesced wakes are admitted only with a linked terminal run and known callbacks. The final guard performs that same complete refresh rather than mixing a stale evidence snapshot with new runs. The generic five-work-turn helper still admits zero notifications when none are owed; this production delegated fixture owes two task completions.
+
+All six non-count outcome checks and every original source/template coverage check remain byte-identical in all four replay projections. All 28 actual model runs remain counted; original input hashes and failed verdicts are unchanged. The stricter action check is separately classified as coverage when attribution is missing. No broad equivalence is established.
+
+- 977 credential-free support tests pass across 64 files, including 144 focused helper/scorer/settlement integrations.
+- E2E typecheck, exact two-cell discovery, canonical capability contract/inventory checks and diff checks pass.
+- Two current-head review findings are fixed: racing observations and unchecked completion-turn writes. Fresh review/CI is required on this source.
+- Initial-head CI retained two unrelated browser failures: exact agent-run denial feedback and touch-picker scroll position. Neither browser path imports the changed runner-e2e harness. They are preserved without a blind rerun; the necessary review-fix head runs normal CI.
+- No providers, old campaign retries or extra paid scope are launched. Actual prior model charges remain unknown.
+
+## Initial executable v2 replay (limited notification proof)
+
 TL;DR: This repairs a grading defect; it does not change model instructions or rerun models. The original Codex and Claude pairs remain Fail → Fail. Provider-free replay through both corrected executable paths passes all four retained cells; source-read coverage remains uncomparable. This is a grading correction, not a new model-performance result.
 
-The original fixture required exactly five total runs. Production adds legitimate server completion turns after delegated work. The corrected v2 contract requires exactly three distinct user-requested CEO turns and two coder executions. At most two additional completion turns must pass strict public identity/account/task/delivery/timing/reply attribution. One turn may batch both completed tasks. Unknown, duplicate, failed, retried or extra-work runs, notification-created tasks and missing public observations fail.
+The original fixture required exactly five total runs. Production adds legitimate server completion turns after delegated work. The corrected v2 contract requires exactly three distinct user-requested CEO turns and two coder executions. At most two additional completion turns must pass strict public identity/account/task/delivery/timing/reply attribution. One turn may batch both completed tasks. Unknown, duplicate, failed, retried runs, notification-created tasks and missing public observations fail. This initial version did not inspect unrelated document writes during notifications; see the stricter current assessment above.
 
 Both executable count guards use the shared helper: the hiring scorer and the hiring-only final chat guard. The catalog declares five required / seven maximum total runs so timeout/cost planning includes notifications. Non-hiring count guards remain unchanged. Source-read and exact coder-body grading remain unchanged, including the historical Claude six-backtick mismatch. The grader version and full helper/chat/source digest change.
 
