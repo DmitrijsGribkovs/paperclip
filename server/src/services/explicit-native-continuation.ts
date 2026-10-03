@@ -345,6 +345,7 @@ export async function admitExplicitContinuationRetry(input: {
       !["failed", "timed_out"].includes(parent.status) || !parent.finishedAt ||
       parent.runtimeMode !== "legacy" || parent.contextSnapshot?.issueId !== issueId ||
       (parent.nativeIssueId !== null && parent.nativeIssueId !== issueId) ||
+      adapterExecutionControls.has(parent.id) ||
       await getExecutionBlocker(db, companyId, issueId)) return null;
   const context = parent.contextSnapshot;
   const explicit = context.explicitUserContinuation as Record<string, unknown> | undefined;

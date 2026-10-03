@@ -18,6 +18,7 @@ import {
 } from "@paperclipai/db";
 import { startEmbeddedPostgresTestDatabase, getEmbeddedPostgresTestSupport } from "../__tests__/helpers/embedded-postgres.js";
 import { admitExplicitNativeContinuation } from "./explicit-native-continuation.js";
+import { adapterExecutionControls, createAdapterExecutionControl } from "./adapter-execution-control.js";
 import { CONVERSATION_CONTINUATION_POLICY } from "./conversation-continuation.js";
 import { buildExecutionContinuation } from "./execution-continuation.js";
 import { heartbeatService, persistHeartbeatRunProcessMetadata, type HeartbeatEnvironmentRuntime } from "./heartbeat.js";
@@ -439,6 +440,22 @@ const support = await getEmbeddedPostgresTestSupport();
     // Removing the new receipt reproduces the original dispatch failure.
     await db.delete(issueRecoveryActions).where(eq(issueRecoveryActions.id, receipts.find(row => row.id !== f.receipt.id)!.id));
     await expect(dispatchExplicitRetry(f, scheduled.run)).rejects.toThrow("continuation_user_authorization_missing");
+  });
+
+  it("waits for the parent adapter controller even when no environment lease remains", async () => {
+    const f = await seedTimedOutExplicitTurn();
+    const heartbeat = heartbeatService(db);
+    const control = createAdapterExecutionControl();
+    adapterExecutionControls.set(f.parent.id, control);
+    try {
+      expect(await heartbeat.scheduleBoundedRetry(f.parent.id)).toMatchObject({ outcome: "not_scheduled" });
+      expect(await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, f.parent.id))).toHaveLength(0);
+      expect(await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, f.issueId))).toHaveLength(1);
+    } finally {
+      adapterExecutionControls.delete(f.parent.id);
+      control.finish();
+    }
+    expect(await heartbeat.scheduleBoundedRetry(f.parent.id)).toMatchObject({ outcome: "scheduled" });
   });
 
   it("binds each bounded explicit retry to its immediate parent without replacing prior receipts", async () => {

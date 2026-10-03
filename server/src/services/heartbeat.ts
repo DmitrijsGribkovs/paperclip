@@ -9843,10 +9843,19 @@ export function heartbeatService(
         ));
         const agent = source ? await getAgent(source.agentId) : null;
         if (source && agent && agent.companyId === source.companyId) {
-          await scheduleBoundedRetryForRun(source, agent, effect.reviewParticipant ? {
+          const retry = await scheduleBoundedRetryForRun(source, agent, effect.reviewParticipant ? {
             retryReason: EXECUTION_REVIEW_PARTICIPANT_RECOVERY_RETRY_REASON,
             wakeReason: EXECUTION_REVIEW_PARTICIPANT_RECOVERY_WAKE_REASON,
           } : undefined);
+          const issueId = readNonEmptyString(source.contextSnapshot?.issueId);
+          if (retry.outcome !== "scheduled" && source.contextSnapshot?.explicitUserContinuation && issueId &&
+              !adapterExecutionControls.has(source.id) && !(await getExecutionBlocker(db, source.companyId, issueId))) {
+            // Cleanup has settled, so exhaustion or revoked/missing authority
+            // must not retain a terminal claim. Do not request another retry.
+            const settled = await wakeQueue.releaseIssueExecution({ companyId: source.companyId,
+              runId: source.id, now: new Date(), suppressImmediateRecovery: true });
+            await applyWakeQueuePostCommitEffects(settled.postCommitEffects);
+          }
         }
       } else if (effect.kind === "run_queued") {
         publishLiveEvent({
@@ -26753,6 +26762,15 @@ export function heartbeatService(
       }
       // Terminalization precedes lease and adapter cleanup. Only now is the
       // owner gone; retry pending input for ordinary completions as well as Stop.
+      if (latestRun?.runtimeMode === "legacy" && ["failed", "timed_out"].includes(latestRun.status) &&
+          latestRun.contextSnapshot?.explicitUserContinuation) {
+        // Re-run the same queue-first recovery decision after cleanup. Its
+        // earlier retry request could not authorize work while this executor
+        // still held its controller or environment lease.
+        await releaseIssueExecutionAndPromote(latestRun).catch(err => {
+          logger.error({ err, runId: run.id }, "failed to settle explicit continuation after cleanup");
+        });
+      }
       if (latestRun?.runtimeMode === "legacy" && isHeartbeatRunTerminalStatus(latestRun.status)) {
         const [pending] = await db.select({ id: agentWakeupRequests.id, payload: agentWakeupRequests.payload }).from(agentWakeupRequests).where(and(
           eq(agentWakeupRequests.companyId, run.companyId), eq(agentWakeupRequests.agentId, run.agentId),
