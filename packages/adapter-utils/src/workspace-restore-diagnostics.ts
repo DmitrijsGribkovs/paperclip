@@ -108,11 +108,12 @@ export function getWorkspaceRestoreDiagnostic(error: unknown): WorkspaceRestoreD
 
 /** Preserve the scheduler-selected task's snapshot when errors share identity. */
 export function recordWorkspaceRestoreDiagnostic(error: unknown, diagnostic: WorkspaceRestoreDiagnostic | undefined): void {
-  if (!error || typeof error !== "object") return;
   const safe = sanitizeWorkspaceRestoreDiagnostic(diagnostic);
-  const receipts = diagnosticCapture.getStore() ?? restoreDiagnostics;
-  if (safe) receipts.set(error, safe);
-  else receipts.delete(error);
+  if (error && typeof error === "object") {
+    const receipts = diagnosticCapture.getStore() ?? restoreDiagnostics;
+    if (safe) receipts.set(error, safe);
+    else receipts.delete(error);
+  }
   const scope = activeDiagnostic.getStore();
   if (scope?.active) {
     if (safe?.step) scope.failures.set(error, { sequence: ++scope.sequence, step: safe.step });
