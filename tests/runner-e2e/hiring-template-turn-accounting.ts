@@ -3,7 +3,7 @@
  * server completion turns are separately admitted and still count toward costs.
  * Outcome artifacts and source/read coverage are graded by their own checks.
  */
-export const HIRING_TEMPLATE_TURN_ACCOUNTING_VERSION = "paperclip.hiring-template-turn-accounting.v1";
+export const HIRING_TEMPLATE_TURN_ACCOUNTING_VERSION = "paperclip.hiring-template-turn-accounting.v2";
 const predicateIds = [
   "known-fixture-context",
   "complete-public-run-ledger",
@@ -16,6 +16,7 @@ const predicateIds = [
   "bounded-server-completion-receipts",
   "completion-runs-have-attributed-chat-replies",
   "no-notification-created-extra-tasks",
+  "completion-turns-only-report-actions",
 ] as const;
 export type HiringTemplateTurnPredicateId = typeof predicateIds[number];
 export interface HiringTemplateTurnPredicate { id: HiringTemplateTurnPredicateId; passed: boolean }
@@ -29,6 +30,11 @@ export interface HiringTemplateTurnAccountingResult {
   counts: HiringTemplateTurnCounts;
   predicates: HiringTemplateTurnPredicate[];
   passed: boolean;
+  actionEvidence: HiringCompletionActionEvidence;
+}
+export interface HiringCompletionActionEvidence {
+  status: "verified" | "violated" | "uncomparable"; notificationRuns: number;
+  canonicalExecutions: number; matchedNativeApiCalls: number; unknownExecutions: number;
 }
 type JsonRecord = Record<string, unknown>;
 const object = (value: unknown): JsonRecord =>
@@ -63,6 +69,104 @@ function accountingProjection(run: JsonRecord): string | null {
       identities: rows(run.identityHistory).map(i => Object.fromEntries(["runId", "companyId", "responsibleUserId",
         "status", "cause", "messageId", "acceptedAt"].map(key => [key, i[key]]))) });
   } catch { return null; }
+}
+
+const notificationReadApiOperations = new Set([
+  "GET /api/issues/{id}", "GET /api/issues/{id}/comments", "GET /api/issues/{id}/documents", "GET /api/issues/{id}/documents/{key}",
+]);
+const discoveryNames = new Set(["search_api", "search_tasks"]);
+const forbiddenWorkTools = new Set(["write_document", "create_task", "hire_agent", "register_deliverable", "create_skill",
+  "update_agent_instructions", "restore_agent_instructions", "create_project", "reassign_task", "set_dependencies", "set_task_title"]);
+const errored = (value: JsonRecord) => Boolean(value.error || value.is_error || value.isError);
+function eventEnvelope(event: JsonRecord) { return object(object(event.payload).prpEvent); }
+/** Only exact per-run IDs join provider executions to successful native actions.
+ * ACPX host request IDs and provider stream IDs cannot be joined by order/name.
+ */
+export function gradeHiringCompletionActions(notifications: JsonRecord[], readRuns: unknown): HiringCompletionActionEvidence {
+  const ledgers = rows(readRuns);
+  const result: HiringCompletionActionEvidence = { status: "verified", notificationRuns: notifications.length,
+    canonicalExecutions: 0, matchedNativeApiCalls: 0, unknownExecutions: 0 };
+  const unresolved = () => { result.unknownExecutions++; if (result.status !== "violated") result.status = "uncomparable"; };
+  const violation = () => { result.status = "violated"; };
+  for (const run of notifications) {
+    const matching = ledgers.filter(ledger => ledger.runId === run.id && ledger.agentId === run.agentId);
+    if (matching.length !== 1) { unresolved(); continue; }
+    const events = rows(matching[0]!.events), terminals = events.filter(event => event.eventType === "run.terminal");
+    const acceptedResults = events.filter(event => event.eventType === "run.result.accepted");
+    const terminalEnvelope = eventEnvelope(terminals[0] ?? {}), terminal = object(terminalEnvelope.payload);
+    const acceptedEnvelope = eventEnvelope(acceptedResults[0] ?? {});
+    if (!events.length || terminals.length !== 1 || acceptedResults.length !== 1
+      || terminalEnvelope.sourceKind !== "control_plane" || terminal.schema !== "paperclip.prp.terminal.v1"
+      || terminal.runTerminalState !== "succeeded" || terminal.turnTerminalState !== "completed"
+      || acceptedEnvelope.sourceKind !== "control_plane" || object(object(acceptedEnvelope.payload).result).schema !== "paperclip.run_result.v1"
+      || !events.every((event, i) => Number.isSafeInteger(event.seq) && event.seq === i + 1)) { unresolved(); continue; }
+    const starts = new Map<unknown, JsonRecord>(), completed = new Map<unknown, JsonRecord>();
+    const nativeStarts = new Map<unknown, JsonRecord>(), nativeResults = new Map<unknown, JsonRecord>();
+    for (const event of events) {
+      const envelope = eventEnvelope(event), payload = object(envelope.payload), item = object(payload.item);
+      if (event.eventType?.toString().startsWith("tool.execution.")) {
+        if (payload.schema !== "paperclip.tool.execution.v1" || !present(payload.executionId)) { unresolved(); continue; }
+        if (event.eventType === "tool.execution.started") {
+          if (starts.has(payload.executionId)) violation();
+          starts.set(payload.executionId, payload);
+        } else if (event.eventType === "tool.execution.completed") {
+          if (completed.has(payload.executionId) || payload.status !== "completed" || errored(payload)
+            || payload.exitCode != null && payload.exitCode !== 0) violation();
+          completed.set(payload.executionId, payload);
+        } else if (["tool.execution.failed", "tool.execution.cancelled", "tool.execution.interrupted"].includes(String(event.eventType))) violation();
+      }
+      if (item.type !== "tool_use" && item.type !== "tool_result") continue;
+      if (envelope.schema !== "paperclip.prp.event.v1" || envelope.schemaVersion !== 1 || envelope.sourceKind !== "runner"
+        || !present(item.id) || errored(item)) { unresolved(); continue; }
+      if (event.eventType === "item.started" && item.type === "tool_use") {
+        if (nativeStarts.has(item.id)) violation();
+        nativeStarts.set(item.id, item);
+      } else if (event.eventType === "item.completed" && item.type === "tool_result") {
+        if (item.tool_use_id !== item.id || nativeResults.has(item.id) || errored(object(item.result))) violation();
+        nativeResults.set(item.id, item);
+      } else unresolved();
+    }
+    if (!sameSet([...starts.keys()], [...completed.keys()]) || !sameSet([...nativeStarts.keys()], [...nativeResults.keys()])) unresolved();
+    for (const [id, start] of nativeStarts) {
+      const receipt = object(nativeResults.get(id)?.result), input = object(start.input);
+      if (start.name === "call_api") {
+        if (present(input.operationId) && !notificationReadApiOperations.has(input.operationId)) violation();
+        if (!present(input.operationId) || input.operationId !== receipt.apiOperationId || receipt.ok !== true
+          || !Number.isInteger(receipt.status) || Number(receipt.status) < 200 || Number(receipt.status) >= 300 || errored(receipt)) { unresolved(); continue; }
+        if (!notificationReadApiOperations.has(input.operationId)) violation();
+      } else if (start.name === "search_api") {
+        if (!Array.isArray(receipt.results) || !Number.isInteger(receipt.total) || Number(receipt.total) < 0 || typeof receipt.guidance !== "string"
+          || receipt.nextCursor != null && typeof receipt.nextCursor !== "string") unresolved();
+      } else if (start.name === "search_tasks") {
+        if (!Array.isArray(receipt.tasks)) unresolved();
+      } else if (forbiddenWorkTools.has(String(start.name))) violation();
+      else unresolved();
+    }
+    for (const [id, start] of starts) {
+      result.canonicalExecutions++;
+      const finish = completed.get(id) ?? {}, native = nativeStarts.get(id);
+      if (start.name !== finish.name) { unresolved(); continue; }
+      if (forbiddenWorkTools.has(String(start.name))) { violation(); continue; }
+      if (start.name === "paperclip_finish") {
+        const proposals = events.filter(event => event.eventType === "run.result.proposed");
+        const proposal = eventEnvelope(proposals[0] ?? {});
+        if (start.transport !== "dynamic" || finish.transport !== "dynamic" || proposals.length !== 1
+          || proposal.sourceKind !== "runner" || proposal.itemId !== id
+          || object(proposal.payload).schema !== "paperclip.run_result.v1") unresolved();
+        continue;
+      }
+      if (start.name === "ToolSearch" && start.transport === "builtin" && finish.transport === "builtin") continue;
+      if (start.name === "call_api" || discoveryNames.has(String(start.name))) {
+        if (!native || native.name !== start.name) { unresolved(); continue; }
+        if (start.name === "call_api") result.matchedNativeApiCalls++;
+      } else if (start.readOnly === true && finish.readOnly === true && ["read", "search", "list"].includes(String(start.operation))
+        && start.operation === finish.operation) continue;
+      else unresolved();
+    }
+    // Every native action must also have an exact canonical provider identity.
+    if ([...nativeStarts.keys()].some(id => !starts.has(id))) unresolved();
+  }
+  return result;
 }
 
 function evaluate(evidence: unknown, apiState: unknown): HiringTemplateTurnAccountingResult {
@@ -174,13 +278,15 @@ function evaluate(evidence: unknown, apiState: unknown): HiringTemplateTurnAccou
   }));
   check("no-notification-created-extra-tasks", tasks.length === 2 && tasks.every(t =>
     !notifications.some(r => r.id === t.originRunId)));
+  const actionEvidence = gradeHiringCompletionActions(notifications, e.readRuns);
+  check("completion-turns-only-report-actions", actionEvidence.status === "verified");
   return {
     version: HIRING_TEMPLATE_TURN_ACCOUNTING_VERSION,
     counts: { requiredWorkTurns: 5, maximumCompletionTurns: 2, maximumTotalTurns: 7,
       requestedLeadTurns: requested.length, coderTurns: workers.length, completionTurns: notifications.length,
       unclassifiedTurns: unknown.length, snapshotRunCount: runs.length, actualRunCount: publicRuns.length,
       costAccountingRunCount: publicRuns.length },
-    predicates, passed: predicates.every(predicate => predicate.passed),
+    predicates, actionEvidence, passed: predicates.every(predicate => predicate.passed),
   };
 }
 
@@ -205,6 +311,7 @@ export function gradeHiringTemplateTurns(input: { evidence: unknown; apiState: u
         requestedLeadTurns: 0, coderTurns: 0, completionTurns: 0, unclassifiedTurns: snapshotRunCount,
         snapshotRunCount, actualRunCount, costAccountingRunCount: actualRunCount },
       predicates: predicateIds.map(id => ({ id, passed: false })), passed: false,
+      actionEvidence: { status: "uncomparable", notificationRuns: 0, canonicalExecutions: 0, matchedNativeApiCalls: 0, unknownExecutions: 0 },
     };
   }
 }

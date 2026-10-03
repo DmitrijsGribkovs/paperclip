@@ -5,7 +5,7 @@ import { buildRunnerE2EProcessEnvironment } from "./harness-env.js";
 import { canonicalProviderEventsFromAcpxRuntimeEvent, canonicalProviderEventsFromCodex } from "../../packages/paperclip-runner/src/provider-events.js";
 import { loadDefaultAgentInstructionsBundle } from "../../server/src/services/default-agent-instructions.js";
 import { HIRING_TEMPLATE_READ_FILES, HIRING_TEMPLATE_SKILL_KEY, hiringTemplateInputs, hiringTemplateScenario } from "./hiring-template-cases.js";
-import { readHiringInstructions, readHiringTemplateSources, renderHiringCoderExample } from "./hiring-template-flow.js";
+import { readHiringInstructions, readHiringTemplateSources, renderHiringCoderExample, waitForSettledHiringObservation } from "./hiring-template-flow.js";
 import { gradeHiringTemplate, hiringTemplateHash, hiringTemplateReadReceipts, type HiringTemplateEvidence } from "./hiring-template-scoring.js";
 import type { RunnerApi } from "./api.js";
 import { createHiringTemplateTurnFixture } from "./hiring-template-turn-fixture.js";
@@ -45,7 +45,7 @@ function validEvidence(notificationCount = 0): HiringTemplateEvidence {
         adapterConfig: { model: "model" }, runtimeConfig: { aiConnection: binding } }],
     connectionId: "account", binding, tasks, runs, first, firstAfterReuse: { ...first }, second: document("second-task", "REUSEHIREfixture", reuseValues),
     turnApiState: turnFixture.apiState,
-    readRuns: [{ runId: "lead-1", agentId: "lead", events: HIRING_TEMPLATE_READ_FILES.flatMap(commandEvents) }] };
+    readRuns: [...turnFixture.evidence.readRuns, { runId: "lead-1", agentId: "lead", events: HIRING_TEMPLATE_READ_FILES.flatMap(commandEvents) }] };
 }
 function fails(evidence: HiringTemplateEvidence, id: string) {
   expect(gradeHiringTemplate(evidence).checks.find(check => check.id === id)?.passed, id).toBe(false);
@@ -113,7 +113,7 @@ describe("production hiring template oracle", () => {
 
   it("separates successful workflow outcomes from missing or mismatched source coverage", () => {
     const e = validEvidence();
-    for (const patch of [{ readRuns: [] }, { assignedSkills: [] }, { expectedSourceHashes: {} }, { servedSourceHashes: {} },
+    for (const patch of [{ readRuns: e.readRuns.filter(run => run.runId !== "lead-1") }, { assignedSkills: [] }, { expectedSourceHashes: {} }, { servedSourceHashes: {} },
       { servedSourceHashes: { ...e.servedSourceHashes, "skills/paperclip-create-agent/SKILL.md": hiringTemplateHash("other checkout") } }]) {
       expect(gradeHiringTemplate({ ...e, ...patch })).toMatchObject({ outcomePassed: true, comparisonStatus: "uncomparable" });
     }
@@ -123,7 +123,7 @@ describe("production hiring template oracle", () => {
   });
 
   it("requires a completed pre-hire lead read rather than an echoed path, failed read or listing", () => {
-    const e = validEvidence(), good = e.readRuns[0]!;
+    const e = validEvidence(), good = e.readRuns.find(run => run.runId === "lead-1")!;
     for (const command of ["echo /workspace/.agents/skills/paperclip-create-agent/SKILL.md", "ls /workspace/.agents/skills/paperclip-create-agent/SKILL.md",
       "cat /workspace/.agents/skills/wrong-skill/SKILL.md", "cat $SKILL/SKILL.md", "cat /workspace/.agents/skills/paperclip-create-agent/SKILL.md > /dev/null",
       ...["cat --help", "cat --version", "head --help", "tail --version", "head -n 0", "tail -c 0", "sed -n ''", "sed -n '1q'", "sed -n 'q'", "sed --help", "sed -n '1,200w /tmp/other'", "cat -n"].map(prefix => `${prefix} /workspace/.agents/skills/paperclip-create-agent/SKILL.md`),
@@ -193,13 +193,26 @@ describe("executable hiring lifecycle count guards", () => {
     expect(() => assertChatFlowRunCount({ suiteId: "hiring-templates", task, runs: evidence.runs,
       hiringEvidence: evidence, hiringApiState: evidence.turnApiState })).toThrow();
   });
+  it("rejects unrelated notification document writes in both executable paths", () => {
+    const evidence = validEvidence(2);
+    const ledger = evidence.readRuns.find(run => run.runId === "notify-1")!;
+    for (const event of ledger.events) {
+      const payload = (event.payload as Record<string, any>).prpEvent.payload;
+      if (payload.name) payload.name = "write_document";
+      if (payload.item?.name) payload.item.name = "write_document";
+    }
+    fails(evidence, "bounded-work-and-completion-turns");
+    expect(() => assertChatFlowRunCount({ suiteId: "hiring-templates", task, runs: evidence.runs,
+      hiringEvidence: evidence, hiringApiState: evidence.turnApiState })).toThrow();
+    expect(gradeHiringTemplate(evidence).turnAccounting.actionEvidence.status).toBe("violated");
+  });
   it("requires public lifecycle observations and preserves source/template coverage failures", () => {
     const evidence = validEvidence(2);
     fails({ ...evidence, turnApiState: undefined }, "bounded-work-and-completion-turns");
     expect(() => assertChatFlowRunCount({ suiteId: "hiring-templates", task, runs: evidence.runs,
       hiringEvidence: evidence })).toThrow();
     const changedInstructions = { ...evidence.hiredInstructions!, files: { "AGENTS.md": `${coder} Changed punctuation.` } };
-    const result = gradeHiringTemplate({ ...evidence, readRuns: [], hiredInstructions: changedInstructions,
+    const result = gradeHiringTemplate({ ...evidence, readRuns: evidence.readRuns.filter(run => run.runId !== "lead-1"), hiredInstructions: changedInstructions,
       hiredInstructionsAfterReuse: structuredClone(changedInstructions) });
     expect(result).toMatchObject({ outcomePassed: true, comparisonStatus: "uncomparable", turnAccounting: { passed: true } });
     expect(result.checks.filter(check => check.dimension === "coverage" && !check.passed).map(check => check.id))
@@ -269,4 +282,93 @@ describe("production hiring fixture wiring and source observations", () => {
       .toBe("You are Casey at Company. Report to CEO.\nLarge manual content.");
     expect(() => renderHiringCoderExample("No example", "Casey", "Company", "CEO", "FIX")).toThrow();
   });
+});
+
+describe("settled hiring observation", () => {
+  function observation(count = 2) {
+    const f = createHiringTemplateTurnFixture(count);
+    const apiState = { ...f.apiState, issue: { ...f.apiState.issue, title: "Hiring fixture", status: "in_review", conversationState: "waiting" },
+      wakes: { events: [], truncated: false } };
+    return { agents: f.evidence.agents, tasks: f.evidence.tasks, runs: f.evidence.runs,
+      readRuns: [], apiState, finalApiState: structuredClone(apiState) };
+  }
+  it("retries the whole snapshot when a completion appears between ledger reads", async () => {
+    const racing = observation(), settled = observation();
+    racing.runs = racing.runs.filter(run => run.id !== "notify-2");
+    racing.apiState.runs = structuredClone(racing.runs);
+    let reads = 0;
+    const value = await waitForSettledHiringObservation(async () => ++reads === 1 ? racing : settled,
+      { deadlineAt: Date.now() + 1000, intervalMs: 0 });
+    expect(reads).toBe(3);
+    expect(value.runs).toHaveLength(7);
+  });
+  it("awaits pending completion wakes and then two stable observations", async () => {
+    const pending = observation(), settled = observation();
+    const wakes = { events: [{ kind: "wake_request", status: "queued", finishedAt: null }], truncated: false };
+    pending.apiState.wakes = pending.finalApiState.wakes = wakes as typeof pending.apiState.wakes;
+    let reads = 0;
+    await waitForSettledHiringObservation(async () => ++reads === 1 ? pending : settled,
+      { deadlineAt: Date.now() + 1000, intervalMs: 0 });
+    expect(reads).toBe(3);
+  });
+  it("awaits an outbox completion not yet represented by a wake or run", async () => {
+    const awaitingCallback = observation(0), settled = observation(1);
+    let reads = 0;
+    const value = await waitForSettledHiringObservation(async () => ++reads === 1 ? awaitingCallback : settled,
+      { deadlineAt: Date.now() + 1000, intervalMs: 0 });
+    expect(reads).toBe(3);
+    expect(value.runs).toHaveLength(6);
+  });
+  it("never admits truncated diagnostics, active runs or inconsistent observations", async () => {
+    for (const defect of ["truncated", "active", "inconsistent"] as const) {
+      const bad = observation();
+      if (defect === "truncated") bad.apiState.wakes.truncated = bad.finalApiState.wakes.truncated = true;
+      if (defect === "active") bad.runs[0]!.status = "running";
+      if (defect === "inconsistent") bad.finalApiState.comments.pop();
+      await expect(waitForSettledHiringObservation(async () => bad,
+        { deadlineAt: Date.now() + 10, intervalMs: 0 })).rejects.toThrow(/Timed out/);
+    }
+  });
+});
+
+it("requires attributable callback replies and does not ignore unresolved coalesced or unknown wakes", async () => {
+  const f = createHiringTemplateTurnFixture(2);
+  const state = { ...f.apiState, issue: { ...f.apiState.issue, title: "Fixture", status: "in_review", conversationState: "waiting" },
+    wakes: { events: [] as Array<{ kind: string; status: string; runId?: string }>, truncated: false } };
+  const valid = { agents: f.evidence.agents, tasks: f.evidence.tasks, runs: f.evidence.runs,
+    readRuns: f.evidence.readRuns, apiState: state, finalApiState: structuredClone(state) };
+  for (const defect of ["reply", "coalesced", "unknown", "scheduled-retry", "duplicate-callback"] as const) {
+    const bad = structuredClone(valid);
+    if (defect === "reply") bad.apiState.comments = bad.finalApiState.comments = [];
+    if (defect === "coalesced") bad.apiState.wakes.events = bad.finalApiState.wakes.events = [{ kind: "wake_request", status: "coalesced", runId: "missing" }];
+    if (defect === "unknown") bad.apiState.wakes.events = bad.finalApiState.wakes.events = [{ kind: "wake_request", status: "other" }];
+    if (defect === "scheduled-retry") bad.runs[0]!.status = "scheduled_retry";
+    if (defect === "duplicate-callback") bad.runs.push(structuredClone(bad.runs.find(run => run.id === "notify-1")!));
+    await expect(waitForSettledHiringObservation(async () => bad,
+      { deadlineAt: Date.now() + 10, intervalMs: 0 })).rejects.toThrow(/Timed out/);
+  }
+});
+
+it("admits completed and accounted coalesced wake bookkeeping after callbacks", async () => {
+  const f = createHiringTemplateTurnFixture(2);
+  const state = { ...f.apiState, issue: { ...f.apiState.issue, title: "Fixture", status: "in_review", conversationState: "waiting" },
+    wakes: { events: [{ kind: "wake_request", status: "completed", runId: "notify-1" },
+      { kind: "wake_request", status: "coalesced", runId: "notify-2" }], truncated: false } };
+  const observation = { agents: f.evidence.agents, tasks: f.evidence.tasks, runs: f.evidence.runs,
+    readRuns: f.evidence.readRuns, apiState: state, finalApiState: structuredClone(state) };
+  let reads = 0;
+  await waitForSettledHiringObservation(async () => { reads++; return observation; },
+    { deadlineAt: Date.now() + 1000, intervalMs: 0 });
+  expect(reads).toBe(2);
+});
+
+it("classifies absent notification action identity as uncomparable separately from unchanged source coverage", () => {
+  const evidence = validEvidence(2);
+  evidence.readRuns = evidence.readRuns.filter(run => run.runId === "lead-1");
+  const result = gradeHiringTemplate(evidence);
+  expect(result.comparisonStatus).toBe("uncomparable");
+  expect(result.turnAccounting.actionEvidence.status).toBe("uncomparable");
+  expect(result.checks.filter(check => check.dimension === "coverage" && !check.passed).map(check => check.id))
+    .toEqual(["completion-action-attribution"]);
+  expect(result.checks.find(check => check.id === "production-source-reads")?.passed).toBe(true);
 });

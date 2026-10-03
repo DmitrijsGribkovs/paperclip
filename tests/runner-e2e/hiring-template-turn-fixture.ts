@@ -29,6 +29,26 @@ interface FixtureComment {
 }
 export const hiringTurnFixtureTimestamp = (seconds: number) => new Date(Date.UTC(2026, 9, 2, 0, 0, seconds)).toISOString();
 
+/** Complete canonical/native read-action stream with one exact execution ID. */
+export function hiringNotificationActionEvents() {
+  const id = "read-action";
+  const payload = { schema: "paperclip.tool.execution.v1", executionId: id, transport: "dynamic",
+    operation: "unknown", name: "call_api", readOnly: null, status: "running", exitCode: null };
+  const items: Array<{ eventType: string; payload: Record<string, unknown> }> = [
+    { eventType: "tool.execution.started", payload },
+    { eventType: "item.started", payload: { kind: "tool", item: { id, type: "tool_use", name: "call_api",
+      input: { operationId: "GET /api/issues/{id}/documents", pathParams: {} } } } },
+    { eventType: "item.completed", payload: { kind: "tool", item: { id, tool_use_id: id, type: "tool_result",
+      result: { apiOperationId: "GET /api/issues/{id}/documents", ok: true, status: 200 } } } },
+    { eventType: "tool.execution.completed", payload: { ...payload, status: "completed" } },
+    { eventType: "run.result.accepted", payload: { result: { schema: "paperclip.run_result.v1" } } },
+    { eventType: "run.terminal", payload: { schema: "paperclip.prp.terminal.v1", runTerminalState: "succeeded", turnTerminalState: "completed" } },
+  ];
+  return items.map((event, i) => ({ seq: i + 1, eventType: event.eventType, payload: { prpEvent: {
+    schema: "paperclip.prp.event.v1", schemaVersion: 1, sourceKind: event.eventType.startsWith("run.") ? "control_plane" : "runner", payload: event.payload,
+  } } }));
+}
+
 export function createHiringTemplateTurnFixture(notificationCount = 2) {
   if (!Number.isInteger(notificationCount) || notificationCount < 0 || notificationCount > 2)
     throw new RangeError("The positive lifecycle fixture accepts zero, one or two notification turns.");
@@ -82,7 +102,8 @@ export function createHiringTemplateTurnFixture(notificationCount = 2) {
   const runs = [...requested, ...workers, ...notifications];
   const evidence = { leadId: lead, chatIssueId: chat, hireName: "Fixture Coder", projectId: "project", connectionId: "account", binding,
     agents: [{ id: lead, companyId: company, name: "Fixture CEO" }, { id: coder, companyId: company, name: "Fixture Coder" }],
-    first: { issueId: tasks[0]!.id }, second: { issueId: tasks[1]!.id }, runs, tasks };
+    first: { issueId: tasks[0]!.id }, second: { issueId: tasks[1]!.id }, runs, tasks,
+    readRuns: notifications.map(run => ({ runId: run.id, agentId: run.agentId, events: hiringNotificationActionEvents() })) };
   const apiState = { issue: { id: chat, companyId: company, conversationUserId: user,
     conversationAgentId: lead, conversationSessionGeneration: 0 }, comments, runs: structuredClone(runs) };
   return { evidence, apiState };

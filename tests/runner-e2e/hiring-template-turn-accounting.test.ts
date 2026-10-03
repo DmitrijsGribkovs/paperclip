@@ -14,7 +14,7 @@ const sync = (f: Fixture) => { f.apiState.runs = structuredClone(e(f).runs); ret
 const fails = (f: { evidence: unknown; apiState: unknown }, predicate?: HiringTemplateTurnPredicateId) => {
   const result = gradeHiringTemplateTurns(f);
   assert.equal(result.passed, false);
-  assert.equal(result.predicates.length, 11);
+  assert.equal(result.predicates.length, 12);
   if (predicate) assert.equal(result.predicates.find(p => p.id === predicate)?.passed, false, predicate);
 };
 
@@ -25,12 +25,12 @@ for (const [count, label] of [[0, "five exact work turns"], [1, "six runs with o
     const result = gradeHiringTemplateTurns(fixture(count));
     assert.equal(result.passed, true);
     assert.equal(result.version, HIRING_TEMPLATE_TURN_ACCOUNTING_VERSION);
-    assert.equal(result.predicates.length, 11);
+    assert.equal(result.predicates.length, 12);
     assert.ok(result.predicates.every(predicate => predicate.passed));
     assert.deepEqual(result.counts, { requiredWorkTurns: 5, maximumCompletionTurns: 2, maximumTotalTurns: 7,
       requestedLeadTurns: 3, coderTurns: 2, completionTurns: count, unclassifiedTurns: 0,
       snapshotRunCount: 5 + count, actualRunCount: 5 + count, costAccountingRunCount: 5 + count });
-    assert.deepEqual(Object.keys(result).sort(), ["counts", "passed", "predicates", "version"]);
+    assert.deepEqual(Object.keys(result).sort(), ["actionEvidence", "counts", "passed", "predicates", "version"]);
   });
 }
 
@@ -150,4 +150,125 @@ it("retains the observed public cost count when evidence getters throw", () => {
   const result = gradeHiringTemplateTurns({ evidence, apiState: f.apiState });
   assert.equal(result.passed, false);
   assert.equal(result.counts.costAccountingRunCount, 7);
+});
+
+it("rejects a notification write_document despite valid tasks and replies", () => {
+  const f = fixture();
+  for (const event of f.evidence.readRuns[0]!.events) {
+    const payload = event.payload.prpEvent.payload as Record<string, any>;
+    if (payload.name) payload.name = "write_document";
+    if (payload.item?.name) payload.item.name = "write_document";
+  }
+  fails(f, "completion-turns-only-report-actions");
+  assert.equal(gradeHiringTemplateTurns(f).actionEvidence.status, "violated");
+});
+it("rejects a generic call_api document PUT even though it completes successfully", () => {
+  const f = fixture();
+  for (const event of f.evidence.readRuns[0]!.events) {
+    const item = (event.payload.prpEvent.payload as Record<string, any>).item;
+    if (item?.input) item.input.operationId = "PUT /api/issues/{id}/documents/{key}";
+    if (item?.result) item.result.apiOperationId = "PUT /api/issues/{id}/documents/{key}";
+  }
+  fails(f, "completion-turns-only-report-actions");
+  assert.equal(gradeHiringTemplateTurns(f).actionEvidence.status, "violated");
+});
+for (const defect of ["missing-stream", "missing-terminal", "missing-start", "unmatched-result", "separate-namespace",
+  "api-error", "different-operation", "unknown-tool", "duplicate-result", "sequence-gap"] as const) {
+  it(`does not certify notification action evidence with ${defect}`, () => {
+    const f = fixture(), ledger = f.evidence.readRuns[0]!, events = ledger.events;
+    const start = events[1]!.payload.prpEvent.payload as Record<string, any>;
+    const result = events[2]!.payload.prpEvent.payload as Record<string, any>;
+    if (defect === "missing-stream") f.evidence.readRuns = [];
+    if (defect === "missing-terminal") ledger.events = events.slice(0, -1);
+    if (defect === "missing-start") ledger.events = events.filter(e => e.eventType !== "item.started");
+    if (defect === "unmatched-result") result.item.tool_use_id = "other";
+    if (defect === "separate-namespace") { start.item.id = result.item.id = result.item.tool_use_id = "host-request"; }
+    if (defect === "api-error") result.item.result.ok = false;
+    if (defect === "different-operation") result.item.result.apiOperationId = "GET /api/issues/{id}";
+    if (defect === "unknown-tool") (events[0]!.payload.prpEvent.payload as Record<string, any>).name = "unknown";
+    if (defect === "duplicate-result") { ledger.events.splice(3, 0, structuredClone(events[2]!)); ledger.events.forEach((e, i) => e.seq = i + 1); }
+    if (defect === "sequence-gap") events[2]!.seq++;
+    fails(f, "completion-turns-only-report-actions");
+  });
+}
+it("allows successful native readonly reads without claiming source identity", () => {
+  const f = fixture();
+  for (const ledger of f.evidence.readRuns) ledger.events = ledger.events.filter(event => !event.eventType.startsWith("item."))
+    .map((event, i) => { const payload = event.payload.prpEvent.payload as Record<string, any>;
+      if (payload.name) Object.assign(payload, { name: "Read File", operation: "read", readOnly: true, transport: "builtin" });
+      return { ...event, seq: i + 1 }; });
+  assert.equal(gradeHiringTemplateTurns(f).passed, true);
+});
+
+for (const [label, value] of [["non-2xx API result", { status: 500 }], ["explicit API error", { error: "failed" }],
+  ["API is_error flag", { is_error: true }], ["API isError flag", { isError: true }]] as const) {
+  it(`rejects ${label}`, () => {
+    const f = fixture();
+    Object.assign((f.evidence.readRuns[0]!.events[2]!.payload.prpEvent.payload as Record<string, any>).item.result, value);
+    fails(f, "completion-turns-only-report-actions");
+  });
+}
+it("does not trust a readonly hint on an unattributed call_api", () => {
+  const f = fixture(), ledger = f.evidence.readRuns[0]!;
+  ledger.events = ledger.events.filter(event => !event.eventType.startsWith("item."));
+  ledger.events.forEach((event, i) => {
+    event.seq = i + 1;
+    const payload = event.payload.prpEvent.payload as Record<string, any>;
+    if (payload.name) Object.assign(payload, { operation: "read", readOnly: true });
+  });
+  fails(f, "completion-turns-only-report-actions");
+});
+for (const [transport, operation, readOnly] of [["dynamic", "unknown", null], ["mcp", "execute", false]] as const) {
+  it(`rejects ${transport} write_document with its actual production ${operation} shape`, () => {
+    const f = fixture();
+    for (const event of f.evidence.readRuns[0]!.events) {
+      const payload = event.payload.prpEvent.payload as Record<string, any>;
+      if (payload.name) Object.assign(payload, { name: "write_document", transport, operation, readOnly });
+      if (payload.item?.name) payload.item.name = "write_document";
+    }
+    fails(f, "completion-turns-only-report-actions");
+    assert.equal(gradeHiringTemplateTurns(f).actionEvidence.status, "violated");
+  });
+}
+it("rejects an attempted mutation even if it fails and a benign read follows", () => {
+  const f = fixture(), ledger = f.evidence.readRuns[0]!;
+  const mutation = structuredClone(ledger.events.slice(0, 4));
+  for (const event of mutation) {
+    const payload = event.payload.prpEvent.payload as Record<string, any>;
+    if (payload.executionId) payload.executionId = "mutation";
+    if (payload.item) { payload.item.id = "mutation"; if (payload.item.tool_use_id) payload.item.tool_use_id = "mutation"; }
+    if (payload.item?.input) payload.item.input.operationId = "POST /api/companies/{companyId}/issues";
+    if (payload.item?.result) Object.assign(payload.item.result, { apiOperationId: "POST /api/companies/{companyId}/issues", ok: false, status: 403 });
+  }
+  ledger.events.unshift(...mutation);
+  ledger.events.forEach((event, i) => event.seq = i + 1);
+  fails(f, "completion-turns-only-report-actions");
+  assert.equal(gradeHiringTemplateTurns(f).actionEvidence.status, "violated");
+});
+it("requires an accepted disposition and succeeded terminal in the action stream", () => {
+  for (const defect of ["accepted", "terminal"] as const) {
+    const f = fixture(), events = f.evidence.readRuns[0]!.events;
+    const payload = events[defect === "accepted" ? 4 : 5]!.payload.prpEvent.payload as Record<string, any>;
+    if (defect === "accepted") payload.result.schema = "wrong";
+    else payload.runTerminalState = "failed";
+    fails(f, "completion-turns-only-report-actions");
+  }
+});
+
+it("admits a correlated native finish without forcing Done versus yielded chat disposition", () => {
+  for (const disposition of ["done", "yielded"]) {
+    const f = fixture(), ledger = f.evidence.readRuns[0]!;
+    const start = structuredClone(ledger.events[0]!), finish = structuredClone(ledger.events[3]!);
+    for (const event of [start, finish]) Object.assign(event.payload.prpEvent.payload,
+      { executionId: "finish", name: "paperclip_finish", transport: "dynamic" });
+    const proposal = { seq: 0, eventType: "run.result.proposed", payload: { prpEvent: {
+      schema: "paperclip.prp.event.v1", schemaVersion: 1, sourceKind: "runner", itemId: "finish",
+      payload: { schema: "paperclip.run_result.v1", reportedWorkDisposition: disposition },
+    } } };
+    ledger.events.splice(4, 0, start, proposal as unknown as typeof start, finish);
+    ledger.events.forEach((event, i) => event.seq = i + 1);
+    assert.equal(gradeHiringTemplateTurns(f).passed, true);
+    (proposal.payload.prpEvent as Record<string, unknown>).itemId = "unrelated";
+    fails(f, "completion-turns-only-report-actions");
+  }
 });

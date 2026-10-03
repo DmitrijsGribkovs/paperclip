@@ -1525,7 +1525,7 @@ failed, retried or extra work runs, and notification-created tasks fail. Every
 actual run remains in usage/cost accounting. The hiring scorer and final chat
 count guard use the same rule. All other chat count guards stay unchanged.
 
-The versioned `paperclip.hiring-templates.v2` oracle separately checks the production CEO bundle, assigned hiring
+The versioned `paperclip.hiring-templates.v3` oracle separately checks the production CEO bundle, assigned hiring
 skill, source hashes, completed pre-hire read receipts, the saved source-derived
 coder example, and durable instruction/skill selections.
 
@@ -1576,3 +1576,9 @@ The existing `first-task` suite uses the actual onboarding wizard and captures
 the changed chief-of-staff persona and skill selections; it needs no fixture
 change for that default selection. Hiring from that wizard-created chief of
 staff remains a separate follow-up qualification.
+
+### Hiring completion accounting evidence
+
+The v3 hiring grader uses turn-accounting v2 in both executable guards. It requires complete per-run public event streams, exact native tool-use/result pairing and canonical execution IDs for completion actions. Only successful known GET issue/document/comment operations, verified reads/discovery, and attributed native chat finish are admitted. Writes, failed mutation attempts, incomplete streams and unknown actions cannot pass. Separate ACPX host request IDs and provider execution IDs are not joined by name/order/count; missing mapping is uncomparable action coverage, not a measured task failure. The original source-read and exact template checks remain unchanged.
+
+The live fixture retries entire bracketed observations, waits for both known task callbacks and attributed replies (including batching), checks untruncated pending-wake diagnostics, and requires two equal settled observations. Silence before outbox enqueue is not delivery. Five-turn generic accounting remains calibrated for no owed notifications; this delegated fixture owes two completions. All actual runs remain counted for usage and cost. Retained original, limited sidecar-v1, initial executable, and stricter v3 assessments remain separately versioned; no models are rerun by the repair.

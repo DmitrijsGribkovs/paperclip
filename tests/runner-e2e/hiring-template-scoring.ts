@@ -160,6 +160,8 @@ export function gradeHiringTemplate(e: HiringTemplateEvidence) {
     && e.hiredInstructions.entryFile === "AGENTS.md" && instruction.trim() === expectedCoder, "Saved hired instructions use the source revision's coder example with its company/name placeholders filled.");
   check("hired-instructions-durable", "coverage", Boolean(e.hiredInstructions) && sameJson(e.hiredInstructions, e.hiredInstructionsAfterReuse), "The same saved instruction bundle survives the reused worker execution.");
   check("hired-skills-durable", "coverage", Boolean(e.hiredSkills) && sameJson(e.hiredSkills, e.hiredSkillsAfterReuse), "The saved skill selections survive the reused worker execution.");
+  check("completion-action-attribution", "coverage", turnAccounting.actionEvidence.status !== "uncomparable",
+    "Notification actions require exact canonical/native identities; missing cross-namespace mapping is uncomparable, not proof of extra work.");
   return {
     checks, readReceipts: receipts, turnAccounting,
     outcomePassed: checks.filter(c => c.dimension === "outcome").every(c => c.passed),
