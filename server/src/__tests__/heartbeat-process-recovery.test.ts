@@ -1491,7 +1491,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     return { companyId, agentId, runId, wakeupRequestId, issueId };
   }
 
-  it.each(["timeout", "upstream", "cleanup_pending", "edited", "exhausted", "new_message", "no_claim", "reassigned", "superseded", "stopped"])(
+  it.each(["timeout", "upstream", "cleanup_pending", "cleanup_pending_edited", "cleanup_pending_exhausted", "edited", "exhausted", "new_message", "no_claim", "reassigned", "superseded", "stopped"])(
     "settles explicit retry admission through real executor cleanup: %s", async scenario => {
       const { companyId, agentId, runId, issueId } = await seedQueuedIssueRunFixture();
       const sourceRunId = randomUUID(), commentId = randomUUID(), nextCommentId = randomUUID();
@@ -1515,7 +1515,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       let heartbeat: ReturnType<typeof heartbeatService>;
       let cancellation: ReturnType<typeof heartbeat.cancelRun> | undefined;
       let cleanupObserved = false;
-      let cleanupPending = scenario === "cleanup_pending";
+      let cleanupPending = scenario.startsWith("cleanup_pending");
       const originalFactory = environmentOrchestrator.environmentRunOrchestrator;
       const release = vi.fn(async () => {
         const [lease] = await db.select().from(environmentLeases).where(eq(environmentLeases.id, identity.id));
@@ -1611,15 +1611,51 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
         } else {
           expect(children).toHaveLength(0);
           expect(receipts).toHaveLength(0);
-          expect(task!.executionRunId).toBe(scenario === "cleanup_pending" ? runId : scenario === "superseded" ? supersedingRunId : null);
+          expect(task!.executionRunId).toBe(cleanupPending ? runId : scenario === "superseded" ? supersedingRunId : null);
         }
         if (scenario === "new_message") expect(await db.select().from(heartbeatRuns).where(and(
           eq(heartbeatRuns.companyId, companyId), sql`${heartbeatRuns.contextSnapshot}->>'wakeCommentId' = ${nextCommentId}`)))
           .toHaveLength(1);
-        if (scenario === "cleanup_pending") {
+        if (cleanupPending) {
+          if (scenario === "cleanup_pending") {
+            const svc = issueService(db);
+            const [other] = await db.insert(agents).values({ companyId, name: "Other worker", role: "engineer",
+              adapterType: "codex_local" }).returning();
+            const actorRunId = randomUUID();
+            await db.insert(heartbeatRuns).values({ id: actorRunId, companyId, agentId, status: "running", contextSnapshot: {} });
+            // Neither a rejected checkout nor stale checkout adoption may erase
+            // the exact pending retry claim, including mixed checkout owners.
+            for (const checkoutRunId of [null, runId, sourceRunId]) {
+              await db.update(issues).set({ checkoutRunId }).where(eq(issues.id, issueId));
+              expect(await svc.clearExecutionRunIfTerminal(issueId)).toBe(false);
+              expect(await svc.clearCheckoutRunIfTerminal(issueId)).toBe(false);
+              await expect(svc.checkout(issueId, other!.id, ["in_progress"], actorRunId)).rejects.toMatchObject({ status: 409 });
+              await expect(svc.assertCheckoutOwner(issueId, other!.id, actorRunId)).rejects.toMatchObject({ status: 409 });
+              await expect(svc.checkout(issueId, agentId, ["in_progress"], actorRunId)).rejects.toMatchObject({ status: 409 });
+              await expect(svc.assertCheckoutOwner(issueId, agentId, actorRunId)).rejects.toMatchObject({ status: 409 });
+              expect((await db.select().from(issues).where(eq(issues.id, issueId)))[0]!.executionRunId).toBe(runId);
+            }
+            await db.update(issues).set({ checkoutRunId: null }).where(eq(issues.id, issueId));
+            await db.update(heartbeatRuns).set({ status: "failed", finishedAt: new Date() }).where(eq(heartbeatRuns.id, actorRunId));
+          }
+          await heartbeat.sweepStaleIssueLocks();
+          expect((await db.select().from(issues).where(eq(issues.id, issueId)))[0]!.executionRunId).toBe(runId);
+          expect(await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, runId))).toHaveLength(0);
+          expect(await db.select().from(issueRecoveryActions).where(and(eq(issueRecoveryActions.sourceIssueId, issueId),
+            eq(issueRecoveryActions.cause, "explicit_user_continuation_retry")))).toHaveLength(0);
+          if (scenario === "cleanup_pending_edited") await db.update(issueComments).set({ body: "Changed while cleanup waited" })
+            .where(eq(issueComments.id, commentId));
+          if (scenario === "cleanup_pending_exhausted") await db.update(heartbeatRuns).set({ scheduledRetryAttempt: 2,
+            scheduledRetryReason: "transient_failure" }).where(eq(heartbeatRuns.id, runId));
           cleanupPending = false;
           await heartbeat.releaseEnvironmentLeasesForRun({ runId, companyId, agentId, status: "timed_out" });
-          expect(await heartbeat.scheduleBoundedRetry(runId)).toMatchObject({ outcome: "scheduled" });
+          await heartbeat.sweepStaleIssueLocks();
+          await heartbeat.sweepStaleIssueLocks();
+          const afterCleanup = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, runId));
+          expect(afterCleanup).toHaveLength(scenario === "cleanup_pending" ? 1 : 0);
+          expect(await db.select().from(issueRecoveryActions).where(and(eq(issueRecoveryActions.sourceIssueId, issueId),
+            eq(issueRecoveryActions.cause, "explicit_user_continuation_retry")))).toHaveLength(afterCleanup.length);
+          expect((await db.select().from(issues).where(eq(issues.id, issueId)))[0]!.executionRunId).toBe(afterCleanup[0]?.id ?? null);
         }
       } finally { factory.mockRestore(); }
     },
