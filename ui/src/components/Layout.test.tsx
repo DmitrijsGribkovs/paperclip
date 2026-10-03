@@ -99,12 +99,12 @@ vi.mock("./ChatContextualSidebar", () => ({
   ChatContextualSidebar: () => <div>Chat sidebar</div>,
 }));
 
-const mockAgentChat = vi.hoisted(() => ({ enabled: true, v2: true }));
+const mockAgentChat = vi.hoisted(() => ({ enabled: true, combined: false }));
 vi.mock("@/hooks/useAgentChatEnabled", () => ({
   useAgentChatEnabled: () => ({ enabled: mockAgentChat.enabled, loaded: true }),
 }));
-vi.mock("@/hooks/useAgentChatV2Enabled", () => ({
-  useAgentChatV2Enabled: () => ({ enabled: mockAgentChat.v2, loaded: true }),
+vi.mock("@/hooks/useCombinedInboxTasksEnabled", () => ({
+  useCombinedInboxTasksEnabled: () => ({ enabled: mockAgentChat.combined, loaded: true }),
 }));
 
 vi.mock("./AppConnectionSidebar", () => ({
@@ -1061,8 +1061,6 @@ describe("Layout", () => {
   });
 
   it("keeps global navigation beside the Chat rail on desktop chat routes (PAP-670)", async () => {
-    // The classic Agent Chat flag is off: v2 carries the rail on its own.
-    mockAgentChat.enabled = false;
     for (const pathname of ["/PAP/chats", "/PAP/chats/ceo"]) {
       currentPathname = pathname;
       const root = createRoot(container);
@@ -1090,13 +1088,12 @@ describe("Layout", () => {
       });
       container.innerHTML = "";
     }
-    mockAgentChat.enabled = true;
   });
 
-  it("omits the Chat rail when Agent Chat v2 is off, and on mobile (PAP-670)", async () => {
-    for (const [enabled, v2, isMobile] of [[true, false, false], [true, true, true]] as const) {
+  it("omits the Chat rail when Agent Chat is off, even with Combined Inbox + Task List on, and on mobile (PAP-670)", async () => {
+    for (const [enabled, combined, isMobile] of [[false, true, false], [false, false, false], [true, false, true]] as const) {
       mockAgentChat.enabled = enabled;
-      mockAgentChat.v2 = v2;
+      mockAgentChat.combined = combined;
       mockSidebarState.isMobile = isMobile;
       currentPathname = "/PAP/chats/ceo";
       const root = createRoot(container);
@@ -1122,7 +1119,7 @@ describe("Layout", () => {
       container.innerHTML = "";
     }
     mockAgentChat.enabled = true;
-    mockAgentChat.v2 = true;
+    mockAgentChat.combined = false;
     mockSidebarState.isMobile = false;
   });
 

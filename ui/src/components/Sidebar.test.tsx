@@ -117,7 +117,7 @@ vi.mock("./SidebarStarredProjects", () => ({
 }));
 
 // Stubbed so the "no agent names in the primary nav" assertion would catch a
-// regression that mounts the old per-agent chat rows under Agent Chat v2.
+// regression that mounts the old per-agent chat rows alongside the Chat rail.
 vi.mock("./SidebarAgentChats", () => ({
   SidebarAgentChats: () => <div data-testid="sidebar-agent-chats">Agent chats</div>,
 }));
@@ -355,50 +355,23 @@ describe("Sidebar", () => {
     });
   });
 
-  it("keeps the agent chat rows and no Chat row while Agent Chat v2 is off", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
+  it("keeps the Inbox row, Workspaces and no chat surfaces while both PAP-670 flags are off", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
     const root = await renderSidebar();
 
     expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(false);
-    expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).toBeNull();
     expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/inbox")).toBe(true);
+    expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/workspaces")).toBe(true);
 
     flushSync(() => {
       root.unmount();
     });
   });
 
-  describe("with Agent Chat v2 on (PAP-670)", () => {
-    it("does not render Workspaces anywhere in the nav, even with isolated workspaces on", async () => {
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true, enableIsolatedWorkspaces: true });
-      const root = await renderSidebar();
-
-      expect(container.textContent).not.toContain("Workspaces");
-      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/workspaces")).toBe(false);
-
-      flushSync(() => {
-        root.unmount();
-      });
-    });
-
-    it("drops the Inbox row and moves its unread badge onto Tasks", async () => {
-      mockInboxBadge.inbox = 7;
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true });
-      const root = await renderSidebar();
-
-      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/inbox")).toBe(false);
-
-      const tasksLink = [...container.querySelectorAll("a")].find((anchor) => anchor.getAttribute("href") === "/issues");
-      expect(tasksLink?.textContent).toContain("Tasks");
-      expect(tasksLink?.textContent).toContain("7");
-
-      flushSync(() => {
-        root.unmount();
-      });
-    });
-
+  describe("with Agent Chat on (PAP-670)", () => {
     it("leads the Work group with a single Chat row and keeps agent names out of the primary nav", async () => {
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true, enableAgentChat: true });
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
       const root = await renderSidebar();
 
       const chatLink = [...container.querySelectorAll("a")].find((anchor) => anchor.getAttribute("href") === "/chats");
@@ -414,11 +387,65 @@ describe("Sidebar", () => {
       });
     });
 
-    it("shows Chat with v2 alone — it does not need the classic Agent Chat flag", async () => {
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChatV2: true, enableAgentChat: false });
+    it("needs nothing else: the Inbox row stays while Combined Inbox + Task List is off", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
       const root = await renderSidebar();
 
       expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(true);
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/inbox")).toBe(true);
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("does not render Workspaces anywhere in the nav, even with isolated workspaces on", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true, enableIsolatedWorkspaces: true });
+      const root = await renderSidebar();
+
+      expect(container.textContent).not.toContain("Workspaces");
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/workspaces")).toBe(false);
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("keeps the per-agent chat rows in the legacy shell, which has no Chat rail", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true, enableStreamlinedUi: false });
+      const root = await renderSidebar();
+
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(false);
+      expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).not.toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+  });
+
+  describe("with Combined Inbox + Task List on (PAP-670)", () => {
+    it("drops the Inbox row and moves its unread badge onto Tasks", async () => {
+      mockInboxBadge.inbox = 7;
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCombinedInboxTasks: true });
+      const root = await renderSidebar();
+
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/inbox")).toBe(false);
+
+      const tasksLink = [...container.querySelectorAll("a")].find((anchor) => anchor.getAttribute("href") === "/issues");
+      expect(tasksLink?.textContent).toContain("Tasks");
+      expect(tasksLink?.textContent).toContain("7");
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("adds no chat surfaces while Agent Chat is off", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCombinedInboxTasks: true, enableAgentChat: false });
+      const root = await renderSidebar();
+
+      expect([...container.querySelectorAll("a")].some((anchor) => anchor.getAttribute("href") === "/chats")).toBe(false);
       expect(container.querySelector('[data-testid="sidebar-agent-chats"]')).toBeNull();
 
       flushSync(() => {

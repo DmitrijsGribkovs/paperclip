@@ -10,13 +10,13 @@ function getDetachedClient(): QueryClient {
 }
 
 /**
- * Agent Chat v2 (Settings > Experimental): the reorganized left nav, Inbox as
- * views inside Tasks, the chat agent rail and the chat side panel's task and
- * artifact cards. Off by default — and off when rendered outside a query
+ * Combined Inbox + Task List (Settings > Experimental): Inbox becomes views
+ * inside Tasks — no Inbox nav row, the unread badge on Tasks, a Views menu on
+ * /issues and /inbox/* redirects. Off by default — and off when rendered outside a query
  * client, as the app root is in some harnesses — so every surface renders as
  * before until an instance opts in.
  */
-export function useAgentChatV2Enabled(): { enabled: boolean; loaded: boolean } {
+export function useCombinedInboxTasksEnabled(): { enabled: boolean; loaded: boolean } {
   const contextClient = useContext(QueryClientContext);
   const query = useQuery(
     {
@@ -30,7 +30,7 @@ export function useAgentChatV2Enabled(): { enabled: boolean; loaded: boolean } {
   if (!contextClient) return { enabled: false, loaded: true };
 
   return {
-    enabled: query.data?.enableAgentChatV2 === true,
+    enabled: query.data?.enableCombinedInboxTasks === true,
     loaded: query.isFetched,
   };
 }

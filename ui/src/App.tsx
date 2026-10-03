@@ -54,7 +54,7 @@ import { CompanyActivity } from "./pages/audit/CompanyActivity";
 import { AuditHub } from "./pages/audit/AuditHub";
 import { Inbox } from "./pages/Inbox";
 import { AgentChatIndex } from "./pages/AgentChatIndex";
-import { useAgentChatV2Enabled } from "./hooks/useAgentChatV2Enabled";
+import { useCombinedInboxTasksEnabled } from "./hooks/useCombinedInboxTasksEnabled";
 import { WhatNeedsMe } from "./pages/WhatNeedsMe";
 import { DecisionQueuePage } from "./pages/DecisionQueuePage";
 import { BoardChat } from "./pages/BoardChat";
@@ -146,9 +146,9 @@ function ProductionSurface({ children }: { children: ReactNode }) {
   return <Suspense fallback={<PaperclipLoading />}>{children}</Suspense>;
 }
 
-function boardRoutes(streamlinedUiEnabled: boolean, agentChatV2Enabled: boolean) {
-  // Agent Chat v2 (PAP-670) only exists in the streamlined shell.
-  const mergedTasks = streamlinedUiEnabled && agentChatV2Enabled;
+function boardRoutes(streamlinedUiEnabled: boolean, combinedInboxTasksEnabled: boolean) {
+  // Combined Inbox + Task List (PAP-670) only exists in the streamlined shell.
+  const mergedTasks = streamlinedUiEnabled && combinedInboxTasksEnabled;
   return (
     <>
       <Route index element={<Navigate to="dashboard" replace />} />
@@ -306,13 +306,12 @@ function boardRoutes(streamlinedUiEnabled: boolean, agentChatV2Enabled: boolean)
       <Route path="search" element={<Search />} />
       {mergedTasks ? (
         <>
-          {/* Agent Chat v2: the status presets are real views, not aliases of /issues. */}
+          {/* Combined Inbox + Task List: the status presets are real views, not aliases of /issues. */}
           <Route path="issues/all" element={<TaskViewRedirect view="all" />} />
           <Route path="issues/active" element={<TaskViewRedirect view="active" />} />
           <Route path="issues/backlog" element={<TaskViewRedirect view="backlog" />} />
           <Route path="issues/done" element={<TaskViewRedirect view="done" />} />
           <Route path="issues/recent" element={<TaskViewRedirect view="recent" />} />
-          <Route path="chats" element={<AgentChatIndex />} />
         </>
       ) : (
         <>
@@ -323,6 +322,8 @@ function boardRoutes(streamlinedUiEnabled: boolean, agentChatV2Enabled: boolean)
           <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
         </>
       )}
+      {/* Agent Chat's landing; it renders its own "turned off" state when the flag is off. */}
+      <Route path="chats" element={<AgentChatIndex />} />
       <Route path="chats/:agentRef" element={<AgentChat />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
       {import.meta.env.DEV ? (
@@ -437,7 +438,7 @@ function boardRoutes(streamlinedUiEnabled: boolean, agentChatV2Enabled: boolean)
       ) : null}
       <Route path="decisions" element={<WhatNeedsMe />} />
       <Route path="decisions/queues/:key" element={<DecisionQueuePage />} />
-      {/* Agent Chat v2: Inbox is a view inside Tasks. Every /inbox/* URL still
+      {/* Combined Inbox + Task List: Inbox is a view inside Tasks. Every /inbox/* URL still
           resolves — it redirects into the matching view — and with the flag off
           (or in the legacy shell) the standalone pages stay. /inbox/requests
           stays its own page either way; Settings → Members links straight to it. */}
@@ -487,8 +488,8 @@ function AppsConnectEntryRoute({
 
 function InboxRootRedirect() {
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
-  return streamlinedUiEnabled && agentChatV2Enabled
+  const { enabled: combinedInboxTasksEnabled } = useCombinedInboxTasksEnabled();
+  return streamlinedUiEnabled && combinedInboxTasksEnabled
     ? <TaskViewRedirect view={taskViewForInboxTab(loadLastInboxTab())} />
     : <Navigate to={`/inbox/${loadLastInboxTab()}`} replace />;
 }
@@ -789,7 +790,7 @@ function NoCompaniesStartPage() {
 
 export function App() {
   const { enabled: streamlinedUiEnabled, loaded: streamlinedUiLoaded } = useStreamlinedUiEnabled();
-  const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
+  const { enabled: combinedInboxTasksEnabled } = useCombinedInboxTasksEnabled();
 
   return (
     <>
@@ -880,7 +881,7 @@ export function App() {
           <Route path="execution-workspaces/:workspaceId/issues" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/routines" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path=":companyPrefix" element={streamlinedUiEnabled ? <Layout /> : <ProductionLayout />}>
-            {boardRoutes(streamlinedUiEnabled, agentChatV2Enabled)}
+            {boardRoutes(streamlinedUiEnabled, combinedInboxTasksEnabled)}
           </Route>
           <Route path="*" element={<NotFoundPage scope="global" />} />
         </Route>

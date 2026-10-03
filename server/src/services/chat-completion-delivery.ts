@@ -1,4 +1,3 @@
-import { isAgentChatEnabled } from "@paperclipai/shared";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { agents, agentWakeupRequests, chatCompletionDeliveries as deliveries, chatTaskHandoffs as handoffs,
   heartbeatRuns, issueComments, issueDocuments, issues, type Db } from "@paperclipai/db";
@@ -169,7 +168,7 @@ export function chatCompletionDeliveryService(db: Db, heartbeat: { wakeup(agentI
       if (!row || !current(row)) {
         await db.update(deliveries).set({ status: "superseded" }).where(eq(deliveries.id, id)); return;
       }
-      if (!isAgentChatEnabled(await instanceSettingsService(db).getExperimental())) return;
+      if (!(await instanceSettingsService(db).getExperimental()).enableAgentChat) return;
       const [agent] = await db.select().from(agents).where(and(eq(agents.id, row.handoff.agentId), eq(agents.companyId, claimed.companyId)));
       if (!agent || ["paused", "terminated"].includes(agent.status)) return;
       const key = `chat-completion:${id}:${claimed.attempts}`;

@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { CircleDot, Plus } from "lucide-react";
 import type { Issue } from "@paperclipai/shared";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
-import { useAgentChatV2Enabled } from "../hooks/useAgentChatV2Enabled";
+import { useCombinedInboxTasksEnabled } from "../hooks/useCombinedInboxTasksEnabled";
 import { useDialogActions } from "../context/DialogContext";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { Inbox } from "./Inbox";
@@ -91,10 +91,10 @@ export function buildIssuesSearchUrl(currentHref: string, search: string): strin
  */
 export function Issues() {
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
-  // The merged surface is Agent Chat v2 only. With the flag off, and always in
+  const { enabled: combinedInboxTasksEnabled } = useCombinedInboxTasksEnabled();
+  // The merged surface is Combined Inbox + Task List only. With the flag off, and always in
   // the legacy shell, Tasks is the plain task list and Inbox keeps its pages.
-  return streamlinedUiEnabled && agentChatV2Enabled ? <StreamlinedTasks /> : <OrganizationIssues />;
+  return streamlinedUiEnabled && combinedInboxTasksEnabled ? <StreamlinedTasks /> : <OrganizationIssues />;
 }
 
 function StreamlinedTasks() {

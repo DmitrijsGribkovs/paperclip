@@ -1,4 +1,3 @@
-import { isAgentChatEnabled } from "@paperclipai/shared";
 import { isNativeWorkspaceExportRepairCause } from "@paperclipai/shared";
 import { retryNativeWorkspaceExport } from "../services/native-runtime/native-workspace-export-retry.js";
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
@@ -15345,7 +15344,7 @@ export function issueRoutes(
       const decision = await decideIssueAccess(req, issue, "issue:comment");
       if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
       if (issue.conversationAgentId) {
-        if (!isAgentChatEnabled(await instanceSettings.getExperimental())) throw notFound("Agent Chat is disabled");
+        if (!(await instanceSettings.getExperimental()).enableAgentChat) throw notFound("Agent Chat is disabled");
         if (req.actor.userId !== issue.conversationUserId) {
           throw forbidden("Only the conversation owner can interrupt a chat to send queued messages");
         }
@@ -17132,7 +17131,7 @@ export function issueRoutes(
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
       if (req.actor.type !== "board" || !req.actor.userId) throw forbidden("Board user access required");
-      if (!isAgentChatEnabled(await instanceSettings.getExperimental())) throw notFound("Agent Chat is disabled");
+      if (!(await instanceSettings.getExperimental()).enableAgentChat) throw notFound("Agent Chat is disabled");
       const resolved = await agentsSvc.resolveByReference(companyId, req.params.agentRef as string);
       if (resolved.ambiguous) throw conflict("Agent reference is ambiguous");
       if (!resolved.agent) throw notFound("Agent not found");
@@ -17165,7 +17164,7 @@ export function issueRoutes(
       );
       if (!issue) return;
       if (issue.conversationAgentId && req.actor.type === "board") {
-        if (!isAgentChatEnabled(await instanceSettings.getExperimental())) throw notFound("Agent Chat is disabled");
+        if (!(await instanceSettings.getExperimental()).enableAgentChat) throw notFound("Agent Chat is disabled");
         if (!req.actor.userId) throw forbidden("Board user access required");
         if (req.actor.userId !== issue.conversationUserId) throw forbidden("Only the conversation owner can send messages or start a new session");
         if (!req.body.clientRequestId) throw unprocessable("Chat messages require a clientRequestId for safe retries");
@@ -18331,7 +18330,7 @@ export function issueRoutes(
         res.status(422).json({ error: "Issue does not belong to company" });
         return;
       }
-      if (issue.conversationAgentId && req.actor.type === "board" && !isAgentChatEnabled(await instanceSettings.getExperimental())) {
+      if (issue.conversationAgentId && req.actor.type === "board" && !(await instanceSettings.getExperimental()).enableAgentChat) {
         throw notFound("Agent Chat is disabled");
       }
       if (issue.conversationAgentId && req.actor.type === "board" && req.actor.userId !== issue.conversationUserId) {

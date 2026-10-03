@@ -103,7 +103,7 @@ export function CommandPalette() {
     queryFn: () => instanceSettingsApi.getExperimental(),
     retry: false,
   });
-  const agentChatV2Enabled = experimentalSettings?.enableAgentChatV2 === true;
+  const combinedInboxTasksEnabled = experimentalSettings?.enableCombinedInboxTasks === true;
   const fileViewerEnabled = experimentalSettings?.enableExperimentalFileViewer === true;
 
   useEffect(() => {
@@ -359,9 +359,9 @@ export function CommandPalette() {
             <LayoutDashboard className="mr-2 h-4 w-4" />
             Dashboard
           </CommandItem>
-          <CommandItem onSelect={() => go(agentChatV2Enabled ? "/issues?view=mine" : "/inbox")}>
+          <CommandItem onSelect={() => go(combinedInboxTasksEnabled ? "/issues?view=mine" : "/inbox")}>
             <Inbox className="mr-2 h-4 w-4" />
-            {agentChatV2Enabled ? "My work" : "Inbox"}
+            {combinedInboxTasksEnabled ? "My work" : "Inbox"}
           </CommandItem>
           <CommandItem onSelect={() => go("/issues")}>
             <CircleDot className="mr-2 h-4 w-4" />

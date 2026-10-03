@@ -31,7 +31,7 @@ import { IssueProperties } from "@/components/IssueProperties";
 import { PROPERTIES_PANE_HEADER_SLOT_ID } from "@/components/PropertiesPanel";
 import { WorkspaceFileBrowser } from "@/components/WorkspaceFileBrowser";
 import { AgentArtifactsPanel, AgentTasksPanel } from "@/components/chat/AgentWorkPanels";
-import { useAgentChatV2Enabled } from "@/hooks/useAgentChatV2Enabled";
+import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { IssuePropertiesArtifactsTab } from "@/components/issue-properties/IssuePropertiesArtifactsTab";
 import { IssuePropertiesPlansTab } from "@/components/issue-properties/IssuePropertiesPlansTab";
 import { TaskDetailSubtasksPanel } from "@/components/task-detail/TaskDetailRelationsPanel";
@@ -254,11 +254,11 @@ export function TaskSidePanel({
   onSkillOpened,
 }: TaskSidePanelProps) {
   const handleScroll = useScrollbarWhileScrolling();
-  // Agent Chat v2: agent chats swap the conversation issue's own panels for
+  // Agent Chat: agent chats swap the conversation issue's own panels for
   // agent-scoped ones — the agent's tasks lead, and Artifacts lists the
   // agent's output. With the flag off a chat keeps the issue's own panels.
-  const { enabled: agentChatV2Enabled } = useAgentChatV2Enabled();
-  const conversationAgentId = agentChatV2Enabled ? issue.conversationAgentId ?? null : null;
+  const { enabled: agentChatEnabled } = useAgentChatEnabled();
+  const conversationAgentId = agentChatEnabled ? issue.conversationAgentId ?? null : null;
   const showRelatedTasks = showSubtasksTab && !conversationAgentId;
   const viewer = useTaskSidePanelFileRouting();
   const { data: documentsData } = useIssueDocuments(issue.id);
@@ -287,7 +287,7 @@ export function TaskSidePanel({
     let tabs = restored?.tabs ?? (conversationAgentId
       ? [taskPanelAgentTasksTab()]
       : issue.conversationAgentId ? [taskPanelArtifactsTab()] : [taskPanelPropertiesTab()]);
-    // A tab saved while Agent Chat v2 was on has nothing to render without it.
+    // A tab saved while Agent Chat was on has nothing to render without it.
     if (!conversationAgentId) tabs = tabs.filter((tab) => tab.payload.kind !== "agent-tasks");
     // Chats used to open on Artifacts by default; move an untouched default
     // onto the agent's tasks instead of keeping the retired layout forever.

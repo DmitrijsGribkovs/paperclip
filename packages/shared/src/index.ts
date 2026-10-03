@@ -2679,7 +2679,6 @@ export {
   type FeatureTier,
   type InstanceFeatureKey,
 } from "./feature-catalog.js";
-export { isAgentChatEnabled } from "./agent-chat-flags.js";
 export {
   EXPERIMENTAL_SETTINGS_WILDCARD,
   HIDEABLE_COMPANY_PAGES,

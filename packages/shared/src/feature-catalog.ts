@@ -147,15 +147,16 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   },
   enableAgentChat: {
     title: "Agent Chat",
-    description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",
+    description:
+      "Persistent task-backed conversations that clarify goals and hand work off to tasks. Chat leads the Work group with an agent rail, and each chat's side panel shows the agent's tasks and artifacts as cards.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
   },
-  enableAgentChatV2: {
-    title: "Agent Chat v2",
+  enableCombinedInboxTasks: {
+    title: "Combined Inbox + Task List",
     description:
-      "The reorganized left nav and chat workspace: Chat leads the Work group with an agent rail, Inbox becomes a set of views inside Tasks, and each chat's side panel shows the agent's tasks and artifacts as cards.",
+      "Inbox becomes a set of views inside Tasks: one Tasks row in the nav carries the unread badge, and a Views menu reaches every inbox and task view.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,

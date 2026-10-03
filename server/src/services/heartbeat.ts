@@ -1,4 +1,3 @@
-import { isAgentChatEnabled } from "@paperclipai/shared";
 import { CHAT_COMPLETION_WAKE_REASON, prepareChatCompletionTurn, chatCompletionInstruction, isCompletedOnboardingHandoffWake } from "./chat-completion-delivery.js";
 import { isAgentDirectoryCopy } from "./agent-directory-working-copies.js";
 
@@ -20273,7 +20272,7 @@ export function heartbeatService(
       const resumingAdmittedConversationTurn = !!runOptions.nativeLeaseOwner
         && typeof run.contextSnapshot?.conversationSessionGeneration === "number";
       if (dispatchIssueId && isConversation(await getIssueExecutionContext(run.companyId, dispatchIssueId))
-        && !resumingAdmittedConversationTurn && !isAgentChatEnabled(await instanceSettings.getExperimental())) {
+        && !resumingAdmittedConversationTurn && !(await instanceSettings.getExperimental()).enableAgentChat) {
         await setRunStatus(run.id, "cancelled", { finishedAt: new Date(), error: "Agent Chat is disabled", errorCode: "agent_chat_disabled" });
         await setWakeupStatus(run.wakeupRequestId, "cancelled", { finishedAt: new Date() });
         await releaseIssueExecutionAndPromote((await getRun(run.id))!, { suppressImmediateRecovery: true });
@@ -26525,7 +26524,7 @@ export function heartbeatService(
         }
         if (isConversationExecutionWake(conversation, reason ?? readNonEmptyString(enrichedContextSnapshot.wakeReason))) return null;
         if (agent.id !== conversation!.conversationAgentId) return null;
-        if (!isAgentChatEnabled(await instanceSettings.getExperimental())) return null;
+        if (!(await instanceSettings.getExperimental()).enableAgentChat) return null;
         if (!wakeCommentId && isWaitingConversation(conversation) && !hasInteractionContinuationWakeContext(enrichedContextSnapshot) && reason !== CHAT_COMPLETION_WAKE_REASON) return null;
       }
     }

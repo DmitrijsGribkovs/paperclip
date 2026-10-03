@@ -287,12 +287,8 @@ const support = await getEmbeddedPostgresTestSupport();
       expect(
         (await request(app).get(`/api/issues/${resolved[0].body.id}`)).status,
       ).toBe(200);
-      // Agent Chat v2 carries chat on its own, without the classic flag.
-      await instanceSettingsService(db).updateExperimental({ enableAgentChatV2: true });
-      expect((await request(app).get(path)).status).toBe(200);
       await instanceSettingsService(db).updateExperimental({
         enableAgentChat: true,
-        enableAgentChatV2: false,
       });
     });
     it("deduplicates concurrent message retries and preserves recoverable delivery", async () => {

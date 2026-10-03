@@ -1,4 +1,3 @@
-import { isAgentChatEnabled } from "@paperclipai/shared";
 import { recordChatHandoff, recordChatCompletion, existingChatCompletionReply, acknowledgeChatCompletionReply } from "./chat-completion-delivery.js";
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
@@ -12163,7 +12162,7 @@ export function issueService(db: Db) {
 
       if (!issue) throw notFound("Issue not found");
 
-      if (issue.conversationAgentId && actor.userId && !isAgentChatEnabled(await instanceSettingsService(dbOrTx).getExperimental())) {
+      if (issue.conversationAgentId && actor.userId && !(await instanceSettingsService(dbOrTx).getExperimental()).enableAgentChat) {
         throw unprocessable("Agent Chat is disabled in Experimental settings");
       }
       const currentUserRedactionOptions = {

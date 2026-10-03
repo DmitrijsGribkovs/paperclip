@@ -90,11 +90,14 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const liveIssueIds = new Set(
     (liveRuns ?? []).flatMap((run) => run.issueId ? [run.issueId] : []),
   );
-  // Agent Chat v2 (PAP-670) reorganizes the nav: Inbox becomes views inside
-  // Tasks, Workspaces leaves, and Chat leads Work with its own agent rail.
-  // While the flag is off the nav is exactly what it was.
-  const agentChatV2 = experimentalSettings?.enableAgentChatV2 === true;
-  const showWorkspacesLink = !agentChatV2 && experimentalSettings?.enableIsolatedWorkspaces === true;
+  // PAP-670 splits the nav reorganization across two experimental flags.
+  // Agent Chat: Chat leads Work as one row with its own agent rail (the
+  // streamlined shell only — the legacy shell keeps per-agent rows), and
+  // Workspaces leaves to make room. Combined Inbox + Task List: Inbox becomes
+  // views inside Tasks, so its row goes and its badge rides on Tasks.
+  const chatRail = agentChatEnabled && streamlinedUiEnabled;
+  const combinedInboxTasks = experimentalSettings?.enableCombinedInboxTasks === true;
+  const showWorkspacesLink = !chatRail && experimentalSettings?.enableIsolatedWorkspaces === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   const goalsLinkPending = experimentalSettings === undefined;
@@ -171,7 +174,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               Cmd/Ctrl+K remains the keyboard path (command palette). */}
           <SidebarNavItem to="/search" label="Search" icon={Search} />
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
-          {!agentChatV2 ? (
+          {!combinedInboxTasks ? (
             <SidebarNavItem
               to="/inbox"
               label="Inbox"
@@ -200,15 +203,15 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </div>
 
         <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
-          {/* Agent Chat v2: Chat leads the Work group as a single row — the
+          {/* Agent Chat: Chat leads the Work group as a single row — the
               agents you talk to live in the Chat surface's own secondary rail
               (ChatContextualSidebar), not in the primary nav. */}
-          {agentChatV2 ? (
+          {chatRail ? (
             <SidebarNavItem to="/chats" label="Chat" icon={MessageSquare} />
           ) : null}
-          {/* Agent Chat v2: Inbox is a view inside Tasks, so the
+          {/* Combined Inbox + Task List: Inbox is a view inside Tasks, so the
               unread/failed-run badge rides on Tasks. */}
-          {agentChatV2 ? (
+          {combinedInboxTasks ? (
             <SidebarNavItem
               to="/issues"
               label="Tasks"
@@ -275,7 +278,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         ) : null}
 
         {children}
-        {!agentChatV2 && agentChatEnabled && !children && <SidebarAgentChats />}
+        {agentChatEnabled && !chatRail && !children && <SidebarAgentChats />}
 
         {streamlinedUiEnabled ? (
           <SidebarRecentTasks companyId={selectedCompanyId} liveIssueIds={liveIssueIds} />
