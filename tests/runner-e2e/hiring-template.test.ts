@@ -8,9 +8,11 @@ import { HIRING_TEMPLATE_READ_FILES, HIRING_TEMPLATE_SKILL_KEY, hiringTemplateIn
 import { readHiringInstructions, readHiringTemplateSources, renderHiringCoderExample } from "./hiring-template-flow.js";
 import { gradeHiringTemplate, hiringTemplateHash, hiringTemplateReadReceipts, type HiringTemplateEvidence } from "./hiring-template-scoring.js";
 import type { RunnerApi } from "./api.js";
+import { createHiringTemplateTurnFixture } from "./hiring-template-turn-fixture.js";
+import { assertChatFlowRunCount } from "./chat-flow.js";
 
 const beforeHire = "2026-10-01T12:00:00.000Z", hiredAt = "2026-10-01T12:01:00.000Z";
-const binding = { provider: "openai", method: "api_key", mode: "responsible_user" };
+const binding = { provider: "anthropic", method: "api_key", mode: "responsible_user" };
 const ceo = { "AGENTS.md": "You are the CEO. Lead the company." };
 const coder = "You are Casey, a software engineer at Fixture Company. Own software implementation and maintenance.";
 // Expected values are stated independently of the implementation under test.
@@ -22,26 +24,27 @@ function commandEvents(file: string) {
     command: `cat /workspace/.agents/skills/paperclip-create-agent/${file}`, aggregatedOutput: "source bytes",
   } }).map(event => ({ eventType: event.eventType, createdAt: beforeHire, payload: { prpEvent: event } }));
 }
-function validEvidence(): HiringTemplateEvidence {
+function validEvidence(notificationCount = 0): HiringTemplateEvidence {
+  const turnFixture = createHiringTemplateTurnFixture(notificationCount);
   const sourceFiles = [...HIRING_TEMPLATE_READ_FILES.map(file => `skills/paperclip-create-agent/${file}`),
     "skills/paperclip-create-agent/references/baseline-role-guide.md", "server/src/onboarding-assets/ceo/AGENTS.md"];
   const hashes = Object.fromEntries(sourceFiles.map(file => [file, hiringTemplateHash(file)]));
-  const tasks = ["first", "second"].map(id => ({ id, companyId: "company", title: id, status: "done", assigneeAgentId: "coder", projectId: "project", parentId: null }));
-  const runs = ["lead-1", "lead-2", "lead-3", "first", "second"].map(id => ({ id, companyId: "company", agentId: id.startsWith("lead") ? "lead" : "coder",
-    status: "succeeded", runtimeMode: "native", contextSnapshot: { issueId: id.startsWith("lead") ? "chat" : id, aiConnection: { connectionId: "account" } } }));
+  const tasks = turnFixture.evidence.tasks;
+  const runs = turnFixture.evidence.runs;
   const document = (issueId: string, reference: string, outputs: string[]) => ({ issueId, key: "fixture", latestRevisionId: `${issueId}-revision`, createdByAgentId: "coder",
     body: JSON.stringify({ reference, entries: hiringTemplateInputs.map((input, index) => ({ input, value: outputs[index] })) }) });
-  const first = document("first", "HIREfixture", values);
+  const first = document("first-task", "HIREfixture", values);
   return { leadId: "lead", chatIssueId: "chat", hireName: "Casey", marker: "HIREfixture", projectId: "project", inputs: hiringTemplateInputs,
     expectedCeoFiles: ceo, leadInstructions: { mode: "managed", entryFile: "AGENTS.md", files: ceo },
     expectedSourceHashes: hashes, servedSourceHashes: { ...hashes }, assignedSkills: [HIRING_TEMPLATE_SKILL_KEY], coderExample: coder,
     hiredInstructions: { mode: "managed", entryFile: "AGENTS.md", files: { "AGENTS.md": coder } },
     hiredInstructionsAfterReuse: { mode: "managed", entryFile: "AGENTS.md", files: { "AGENTS.md": coder } },
     hiredSkills: [], hiredSkillsAfterReuse: [],
-    agents: [{ id: "lead", name: "CEO", adapterConfig: { model: "model" } },
-      { id: "coder", name: "Casey", role: "engineer", reportsTo: "lead", adapterType: "paperclip_runner", createdAt: hiredAt,
+    agents: [{ ...turnFixture.evidence.agents[0], id: "lead", name: "CEO", adapterConfig: { model: "model" } },
+      { ...turnFixture.evidence.agents[1], id: "coder", name: "Casey", role: "engineer", reportsTo: "lead", adapterType: "paperclip_runner", createdAt: hiredAt,
         adapterConfig: { model: "model" }, runtimeConfig: { aiConnection: binding } }],
-    connectionId: "account", binding, tasks, runs, first, firstAfterReuse: { ...first }, second: document("second", "REUSEHIREfixture", reuseValues),
+    connectionId: "account", binding, tasks, runs, first, firstAfterReuse: { ...first }, second: document("second-task", "REUSEHIREfixture", reuseValues),
+    turnApiState: turnFixture.apiState,
     readRuns: [{ runId: "lead-1", agentId: "lead", events: HIRING_TEMPLATE_READ_FILES.flatMap(commandEvents) }] };
 }
 function fails(evidence: HiringTemplateEvidence, id: string) {
@@ -63,7 +66,7 @@ describe("production hiring template oracle", () => {
     fails({ ...e, first: { ...e.first!, createdByAgentId: "lead" } }, "initial-json-artifact");
   });
 
-  it("requires the real hired identity, account, two distinct tasks and exactly five successful turns", () => {
+  it("requires the real hired identity, account, two distinct tasks and exactly five required successful work turns", () => {
     const e = validEvidence();
     fails({ ...e, agents: [...e.agents, { ...e.agents[1]!, id: "replacement" }] }, "one-coder-hire");
     for (const wrong of [{ role: "qa" }, { reportsTo: "somebody" }, { adapterType: "codex_local" }, { name: "Another coder" }]) {
@@ -74,10 +77,10 @@ describe("production hiring template oracle", () => {
     for (const patch of [{ assigneeAgentId: "lead" }, { parentId: "chat" }, { projectId: "other" }, { status: "backlog" }]) {
       fails({ ...e, tasks: [e.tasks[0]!, { ...e.tasks[1]!, ...patch }] }, "two-worker-tasks");
     }
-    fails({ ...e, runs: e.runs.slice(1) }, "five-successful-turns");
-    fails({ ...e, runs: [...e.runs, { ...e.runs[0]!, id: "extra" }] }, "five-successful-turns");
-    fails({ ...e, runs: e.runs.map(r => r.id === "second" ? { ...r, contextSnapshot: { issueId: "second", aiConnection: { connectionId: "other" } } } : r) }, "five-successful-turns");
-    fails({ ...e, runs: e.runs.map(r => r.id === "lead-3" ? { ...r, agentId: "coder" } : r) }, "five-successful-turns");
+    fails({ ...e, runs: e.runs.slice(1) }, "bounded-work-and-completion-turns");
+    fails({ ...e, runs: [...e.runs, { ...e.runs[0]!, id: "extra" }] }, "bounded-work-and-completion-turns");
+    fails({ ...e, runs: e.runs.map(r => r.id === "worker-reuse" ? { ...r, contextSnapshot: { issueId: "second-task", aiConnection: { connectionId: "other" } } } : r) }, "bounded-work-and-completion-turns");
+    fails({ ...e, runs: e.runs.map(r => r.id === "lead-status" ? { ...r, agentId: "coder" } : r) }, "bounded-work-and-completion-turns");
     fails({ ...e, firstAfterReuse: { ...e.first!, latestRevisionId: "modified" } }, "original-preserved");
   });
 
@@ -167,13 +170,58 @@ describe("production hiring template oracle", () => {
   });
 });
 
+describe("executable hiring lifecycle count guards", () => {
+  const task = { expectedRunCount: 7, minimumExpectedRunCount: 5 };
+  it("grades and admits five required work turns with zero, batched or distinct completion turns", () => {
+    for (const count of [0, 1, 2]) {
+      const evidence = validEvidence(count);
+      const result = gradeHiringTemplate(evidence);
+      expect(result).toMatchObject({ outcomePassed: true, comparisonStatus: "comparable", turnAccounting: {
+        passed: true, counts: { requestedLeadTurns: 3, coderTurns: 2, completionTurns: count,
+          actualRunCount: 5 + count, costAccountingRunCount: 5 + count, unclassifiedTurns: 0 },
+      } });
+      expect(assertChatFlowRunCount({ suiteId: "hiring-templates", task, runs: evidence.runs,
+        hiringEvidence: evidence, hiringApiState: evidence.turnApiState })?.passed).toBe(true);
+    }
+  });
+  it("rejects an arbitrary same-count wake in both executable paths", () => {
+    const evidence = validEvidence(2);
+    const notification = evidence.runs.find(run => run.contextSnapshot?.wakeReason === "chat_task_completed")!;
+    notification.contextSnapshot!.wakeReason = "heartbeat_timer";
+    (evidence.turnApiState as { runs: unknown[] }).runs = structuredClone(evidence.runs);
+    fails(evidence, "bounded-work-and-completion-turns");
+    expect(() => assertChatFlowRunCount({ suiteId: "hiring-templates", task, runs: evidence.runs,
+      hiringEvidence: evidence, hiringApiState: evidence.turnApiState })).toThrow();
+  });
+  it("requires public lifecycle observations and preserves source/template coverage failures", () => {
+    const evidence = validEvidence(2);
+    fails({ ...evidence, turnApiState: undefined }, "bounded-work-and-completion-turns");
+    expect(() => assertChatFlowRunCount({ suiteId: "hiring-templates", task, runs: evidence.runs,
+      hiringEvidence: evidence })).toThrow();
+    const changedInstructions = { ...evidence.hiredInstructions!, files: { "AGENTS.md": `${coder} Changed punctuation.` } };
+    const result = gradeHiringTemplate({ ...evidence, readRuns: [], hiredInstructions: changedInstructions,
+      hiredInstructionsAfterReuse: structuredClone(changedInstructions) });
+    expect(result).toMatchObject({ outcomePassed: true, comparisonStatus: "uncomparable", turnAccounting: { passed: true } });
+    expect(result.checks.filter(check => check.dimension === "coverage" && !check.passed).map(check => check.id))
+      .toEqual(["production-source-reads", "supplied-coder-instructions"]);
+  });
+  it("keeps every non-hiring chat count guard unchanged", () => {
+    const runs = validEvidence(2).runs;
+    for (const suiteId of ["agent-chat", "agent-chat-hardening", "agent-chat-qualification", "context-integrity"]) {
+      expect(() => assertChatFlowRunCount({ suiteId, task: { expectedRunCount: 2 }, runs: runs.slice(0, 2) })).not.toThrow();
+      expect(() => assertChatFlowRunCount({ suiteId, task: { expectedRunCount: 2 }, runs: runs.slice(0, 3) })).toThrow();
+    }
+  });
+});
+
 describe("production hiring fixture wiring and source observations", () => {
-  it("keeps two explicit local native cells, production permissions and five-turn scope", () => {
+  it("keeps two explicit local native cells, production permissions and bounded five-work-turn scope", () => {
     const cells = runnerMatrix.filter(cell => cell.suite.id === "hiring-templates");
     expect(cells.map(cell => cell.id)).toEqual(["hiring-templates.runner-codex.local.hire-coder-template-reuse", "hiring-templates.runner-acpx-claude.local.hire-coder-template-reuse"]);
     expect(runnerSuites.find(suite => suite.id === "hiring-templates")?.manualOnly).toBe(true);
     for (const cell of cells) {
-      expect(cell.task.expectedRunCount).toBe(5);
+      expect(cell.task.expectedRunCount).toBe(7);
+      expect(cell.task.minimumExpectedRunCount).toBe(5);
       expect(cell.task.attemptTimeoutMs?.local).toBe(15 * 60_000);
       expect(buildRunnerE2EProcessEnvironment({}, [cell]).PAPERCLIP_RUNNER_API_TOOLS_ENABLED).toBe("true");
       const payload = cell.profile.buildAgent({ executionId: "fixture", workspacePath: "/workspace", environmentId: "env", environmentFixtureId: "local",

@@ -62,6 +62,16 @@ export function renderHiringCoderExample(reference: string, agentName: string, c
   return example.replaceAll("{{agentName}}", agentName).replaceAll("{{companyName}}", companyName).replaceAll("{{managerTitle}}", managerTitle).replaceAll("{{issuePrefix}}", issuePrefix);
 }
 
+/** Reads only existing public surfaces; this does not fabricate lifecycle evidence. */
+export async function readHiringTurnApiState(api: Pick<RunnerApi, "get">, chatIssueId: string, allRuns: () => Promise<ChatRun[]>) {
+  const [issue, comments, runs] = await Promise.all([
+    api.get<ChatIssue>(`/api/issues/${chatIssueId}`),
+    api.get<unknown[]>(`/api/issues/${chatIssueId}/comments`),
+    allRuns(),
+  ]);
+  return { issue, comments, runs };
+}
+
 export async function runHiringTemplateFlow(context: {
   input: ChatFlowInput; issue(): ChatIssue; turn(message: string, count: number): Promise<void>;
   tasks(): Promise<ChatIssue[]>; allRuns(): Promise<ChatRun[]>;
@@ -83,6 +93,7 @@ export async function runHiringTemplateFlow(context: {
   async function refresh() {
     const observed = await Promise.all([api.get<HiringAgent[]>(`${company}/agents`), tasks(), allRuns()]);
     [evidence.agents, evidence.tasks, evidence.runs] = observed;
+    if (evidence.chatIssueId) evidence.turnApiState = await readHiringTurnApiState(api, evidence.chatIssueId, allRuns);
     evidence.readRuns = await Promise.all(evidence.runs.map(async run => {
       const events = await collectRunEvents<{ seq?: number; eventType?: string; payload?: unknown; createdAt?: string }>(
         (afterSeq, limit) => api.get(`/api/heartbeat-runs/${run.id}/events?afterSeq=${afterSeq}&limit=${limit}`),
@@ -133,6 +144,7 @@ export async function runHiringTemplateFlow(context: {
     const failed = result.checks.filter(check => !check.passed);
     if (!result.outcomePassed) throw new Error(`Hiring-template workflow outcome failed: ${failed.filter(check => check.dimension === "outcome").map(check => check.id).join(", ")}`);
     if (result.comparisonStatus === "uncomparable") throw new Error(`Hiring-template source coverage is uncomparable: ${failed.filter(check => check.dimension === "coverage").map(check => check.id).join(", ")}`);
+    return evidence;
   } finally {
     let observationError: string | undefined;
     try { await refresh(); } catch (error) { observationError = String(error); }
